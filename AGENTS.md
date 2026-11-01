@@ -50,7 +50,7 @@ Org-wide (1–9), then this repo's own.
    simulator-free `core/` and the standalone tooling are `MIT OR GPL-2.0-only`;
    ns-3 modules, the site, docs and data are `GPL-2.0-only`. Every original
    `.h`/`.hpp`/`.cc`/`.cpp`/`.py`/`.sh` starts with
-   `// Copyright (c) 2026 Daniel Joppi (https://github.com/swarm-routing)` +
+   `// Copyright (c) 2026 Daniel Henrique Joppi` +
    `// SPDX-License-Identifier: <MIT OR GPL-2.0-only | GPL-2.0-only>` (`#`
    comments where needed), matching its directory in `LICENSING.md`. CI
    (`reusable-licence-check.yml`) checks it. A new directory gets its row in
