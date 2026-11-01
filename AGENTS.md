@@ -19,7 +19,8 @@ AntHocNet's dual-licensed `core/`, plus ns-3 cross-layer glue
 
 ```
 CMakeLists.txt      build_lib(LIBNAME swarm-core ...)
-model/              primitives (no ns-3 headers) + ns-3 glue, kept in separate files
+core/               simulator-free primitives — MIT OR GPL-2.0-only, carries core/LICENSE
+model/              ns-3 glue — GPL-2.0-only
 helper/             ns-3 helpers
 test/               swarm-core test suite (roundtrip, fuzz, primitives, glue)
 examples/
@@ -43,18 +44,26 @@ docker run --rm -v "$PWD:/src/swarm-core:ro" ghcr.io/swarm-routing/ns3-dev:3.43-
 
 Org-wide (1–9), then this repo's own.
 
-1. **SPDX header on every original source file.** `.h`, `.cc`, `.cpp`, `.py`
-   (and scripts, workflows) start with
+1. **Licensing per directory, as AntHocNet** ([`LICENSING.md`](LICENSING.md);
+   AntHocNet [LICENSING.md](https://github.com/danieljoppi/AntHocNet/blob/main/LICENSING.md),
+   [ADR-0028](https://github.com/danieljoppi/AntHocNet/blob/main/docs/adr/0028-core-is-dual-licensed.md)). A
+   simulator-free `core/` and the standalone tooling are `MIT OR GPL-2.0-only`;
+   ns-3 modules, the site, docs and data are `GPL-2.0-only`. Every original
+   `.h`/`.hpp`/`.cc`/`.cpp`/`.py`/`.sh` starts with
    `// Copyright (c) 2026 Daniel Joppi (https://github.com/swarm-routing)` +
-   `// SPDX-License-Identifier: MIT` (`#` comments where needed). CI checks it.
-2. **No GPL code in an MIT repo.** Never copy from ns-3's `src/aodv`, `src/olsr`
-   or any other ns-3 module; implement against public ns-3 interfaces. From
-   AntHocNet, only the `MIT OR GPL-2.0-only` paths (`core/`, `tools/`,
-   `ns3/tools/`, `docs/tools/`) may be extracted as-is. Its `ns3/` modules
-   (the `adaptive` arms, `routing-bench`, `oracle`) are **GPL-2.0-only**:
-   bringing one here needs the copyright holder's explicit relicensing
-   decision recorded in an issue first. `ns3/baselines/aomdv` and `gpsr` are
-   third-party GPL and never come here.
+   `// SPDX-License-Identifier: <MIT OR GPL-2.0-only | GPL-2.0-only>` (`#`
+   comments where needed), matching its directory in `LICENSING.md`. CI
+   (`reusable-licence-check.yml`) checks it. A new directory gets its row in
+   `LICENSING.md` in the same PR.
+2. **The licence boundary only goes one way.** GPL code may use the dual
+   parts; dual code never pulls GPL-only code in: a `core/` file includes only
+   the C++ standard library and other `core/` files (CI checks it), and a dual
+   script imports no GPL-only code. Code coming from AntHocNet keeps its
+   licence: its `core/`/`tools/` (dual) may land in dual or GPL paths here; its
+   `ns3/` modules and `web/` (GPL-2.0-only) only in GPL paths. Third-party code
+   (AntHocNet's vendored `aomdv`/`gpsr`, IITP RAS) lands only in GPL paths with
+   its provenance recorded. Write clean implementations against public ns-3
+   interfaces rather than copying ns-3's `src/aodv`/`src/olsr`.
 3. **Wire formats are POD + versioned.** Control headers are
    simulator-independent POD structs with bounds-checked little-endian
    readers/writers, a leading version byte, and deterministic roundtrip + fuzz
@@ -76,7 +85,7 @@ Org-wide (1–9), then this repo's own.
    buildx caches scoped per profile; transient artifacts `retention-days` <= 7.
 9. **Nothing shipped depends on `.claude/`.** Skills hold procedures; scripts
    that anything shipped needs live in `tools/` (AntHocNet ADR-0014).
-10. **Primitives include no simulator header.** The primitive files take time, randomness, neighbours and deferred work through injected ports (as AntHocNet's `core/ports.h`), so they stay reusable and unit-testable; only the glue files include `ns3/*`. Keep the two in separate files.
+10. **`core/` includes no simulator header.** The primitives take time, randomness, neighbours and deferred work through injected ports (as AntHocNet's `core/ports.h`), so they stay reusable, unit-testable and MIT-optional; only `model/` (GPL) includes `ns3/*`.
 11. **No protocol logic here.** swarm-core holds what two or more protocols share. A protocol's decision rules live in its own repo; promote code here only when a second protocol needs it.
 12. **Downstream API stability.** ARA, BeeAdHoc and later protocols build against `main`: a breaking API change lands with the downstream fixes or an issue in each consumer.
 13. **Every primitive change carries a test** in `test/` (AntHocNet golden rule 7).
@@ -115,7 +124,7 @@ Org-wide (1–9), then this repo's own.
 
 | You want to… | Go to |
 |--------------|-------|
-| Source of the primitives | AntHocNet `core/include/anthocnet/core/`, `core/src/` (MIT OR GPL — extractable) |
+| Source of the primitives | AntHocNet `core/include/anthocnet/core/`, `core/src/` (MIT OR GPL-2.0-only → `core/` here) |
 | Wire-format discipline | AntHocNet `docs/wire-format.md`, ADR-0006 |
 | Link-metric seam history | AntHocNet #142 (closed), #145, #146 |
 | The org's invariants, labels, issue shape | [`swarm-routing/.github` CONTRIBUTING.md](https://github.com/swarm-routing/.github/blob/main/CONTRIBUTING.md) |
