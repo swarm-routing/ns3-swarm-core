@@ -1,0 +1,84 @@
+# yaml-language-server: $schema=https://coderabbit.ai/integrations/schema.v2.json
+# CodeRabbit review settings (org decision 2026-11-01, swarm-routing/ns3-containers#18):
+# the per-PR AI reviewer for every public swarm-routing repository. Comments
+# only: it never approves or requests changes, and it is not a required check.
+language: en-US
+reviews:
+  profile: chill
+  request_changes_workflow: false
+  high_level_summary: true
+  poem: false
+  review_status: true
+  collapse_walkthrough: true
+  auto_review:
+    enabled: true
+    drafts: false
+  path_filters:
+    - "!**/*.pdf"
+  path_instructions:
+    - path: "**/*"
+      instructions: >-
+        Review against this repository's AGENTS.md (golden rules) and the org rules in
+        swarm-routing/.github CONTRIBUTING.md. Flag a broken invariant as a blocking
+        issue; keep style nits minimal (clang-format, ruff, actionlint and shellcheck
+        already run in CI).
+    - path: "**/*.{h,hpp,cc,cpp,py,sh}"
+      instructions: >-
+        Every original source file starts with `Copyright (c) 2026 Daniel Joppi
+        (https://github.com/swarm-routing)` and an SPDX-License-Identifier that
+        matches its directory's row in LICENSING.md: `MIT OR GPL-2.0-only` for a
+        simulator-free core/ and standalone tooling, `GPL-2.0-only` for ns-3 modules,
+        the site, docs and data. A new directory needs its LICENSING.md row in the
+        same PR. Dual-licensed code must never include or import GPL-only code. Flag
+        any code that looks copied from ns-3's src/aodv or src/olsr.
+    - path: ".github/workflows/**"
+      instructions: >-
+        Actions are pinned by full commit SHA with a `# vX.Y.Z` comment; permissions
+        are minimal; transient artifacts use retention-days <= 7. Automatic CI targets
+        ghcr.io/swarm-routing/ns3-dev:latest-<profile> (the ns-3 release ns-3
+        supports); older ns-3 releases only on demand via workflow_dispatch (org
+        invariant 7). CI never uses the `optimized` image.
+    - path: "**/*.md"
+      instructions: >-
+        Docs are for ns-3 developers: commands must be runnable and exact; no invented
+        numbers, DOIs or citations; paywalled papers never committed to public
+        repositories.
+    - path: "core/**"
+      instructions: >-
+        core/ is simulator-free and MIT OR GPL-2.0-only: it includes only the C++
+        standard library and other core/ files, never ns3/* headers; time, randomness,
+        neighbours and deferred work come through injected ports. Every primitive
+        change carries a test in test/.
+    - path: "model/**"
+      instructions: >-
+        model/ is ns-3 glue (GPL-2.0-only). No protocol-specific decision logic in
+        swarm-core: promote code here only when two protocols need it. A breaking API
+        change lands with downstream fixes or an issue in each consumer (ARA,
+        BeeAdHoc).
+    - path: "**/*wire*"
+      instructions: >-
+        Wire formats are POD, little-endian, bounds-checked, with a leading version
+        byte and deterministic roundtrip + fuzz tests; a field or unit change bumps
+        the version byte.
+  tools:
+    shellcheck:
+      enabled: true
+    actionlint:
+      enabled: true
+    ruff:
+      enabled: true
+    markdownlint:
+      enabled: true
+    yamllint:
+      enabled: true
+    gitleaks:
+      enabled: true
+knowledge_base:
+  code_guidelines:
+    enabled: true
+    filePatterns:
+      - "AGENTS.md"
+      - "CLAUDE.md"
+      - "LICENSING.md"
+chat:
+  auto_reply: true
