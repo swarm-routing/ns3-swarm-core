@@ -7,7 +7,7 @@ before changing anything. Org-wide conventions:
 
 ## What this repo is
 
-**Status: empty, populated in Phase 2.** The layout below is the plan; update this file in the PR that creates it.
+**Status: skeleton (#7).** The module builds and tests with every org quality gate on; the primitives arrive in `core/` with #8 and the ns-3 glue in `model/` with #9. Directories marked (planned) do not exist yet: update this file in the PR that creates each.
 
 The shared ns-3 contrib module `swarm-core` (`libns3.<ver>-swarm-core`) every
 swarm-routing protocol links against: simulator-agnostic C++20 primitives
@@ -18,12 +18,13 @@ AntHocNet's dual-licensed `core/`, plus ns-3 cross-layer glue
 `EnergyMetricHook` over `ns3::EnergySource`, `IslLinkMonitor`).
 
 ```
-CMakeLists.txt      build_lib(LIBNAME swarm-core ...)
-core/               simulator-free primitives — MIT OR GPL-2.0-only, carries core/LICENSE
-model/              ns-3 glue — GPL-2.0-only
-helper/             ns-3 helpers
+CMakeLists.txt      build_lib(LIBNAME swarm-core ...); ns-3 generates ns3/swarm-core-module.h
+core/               (planned, #8) simulator-free primitives — MIT OR GPL-2.0-only, carries core/LICENSE
+model/              ns-3 glue — GPL-2.0-only (today: kSwarmCoreApiVersion, SwarmCoreSeed)
+helper/             (planned) ns-3 helpers
 test/               swarm-core test suite (roundtrip, fuzz, primitives, glue)
-examples/
+examples/           swarm-core-seed: the determinism gate's program until the primitives give it more
+.github/workflows/  ci.yml (reusable-ns3-ci: strict warnings, coverage, determinism, format, headers), pr-title.yml
 ```
 
 ## Build & verify
@@ -39,10 +40,15 @@ same locally:
 
 ```bash
 docker run --rm -v "$PWD:/src/swarm-core:ro" ghcr.io/swarm-routing/ns3-dev:latest-debug \
-    ns3-build-contrib --test swarm-core=/src/swarm-core
+    ns3-build-contrib --strict-warnings --test swarm-core=/src/swarm-core
 ```
 
-`test.py -s swarm-core` must pass on debug and sanitized.
+`test.py -s swarm-core` must pass on debug and sanitized, with strict warnings
+as errors (our code only; ns-3's headers are exempt). CI also reports coverage
+(report-only) and runs the determinism gate: `swarm-core-seed --seed=1` twice
+must be byte-identical and `--seed=2` must differ (org invariant 5). Format:
+`clang-format-18 --dry-run -Werror` with the org `.clang-format`. The suite
+needs ns-3.42+ (scoped `TestCase::Duration`).
 
 ## Golden rules (invariants — do not break)
 
