@@ -7,7 +7,7 @@ before changing anything. Org-wide conventions:
 
 ## What this repo is
 
-**Status: skeleton (#7).** The module builds and tests with every org quality gate on; the primitives arrive in `core/` with #8 and the ns-3 glue in `model/` with #9. Directories marked (planned) do not exist yet: update this file in the PR that creates each.
+**Status: skeleton (#7).** CI runs every org quality gate on the module; the primitives arrive in `core/` with #8 and the ns-3 glue in `model/` with #9. Directories marked (planned) do not exist yet: update this file in the PR that creates each.
 
 The shared ns-3 contrib module `swarm-core` (`libns3.<ver>-swarm-core`) every
 swarm-routing protocol links against: simulator-agnostic C++20 primitives
@@ -43,9 +43,12 @@ docker run --rm -v "$PWD:/src/swarm-core:ro" ghcr.io/swarm-routing/ns3-dev:lates
     ns3-build-contrib --strict-warnings --test swarm-core=/src/swarm-core
 ```
 
-`test.py -s swarm-core` must pass on debug and sanitized, with strict warnings
-as errors (our code only; ns-3's headers are exempt). CI also reports coverage
-(report-only) and runs the determinism gate: `swarm-core-seed --seed=1` twice
+Automatic runs (push, PR: `latest`) must pass `test.py -s swarm-core` on debug
+and sanitized, with strict warnings as errors (our code only; ns-3's headers
+are exempt), and report coverage (report-only). A manual run on older releases
+(`ns3-versions`) uses its `profiles` input (default debug) without strict
+warnings or coverage, since older images may predate those options. Every run
+has the determinism gate: `swarm-core-seed --seed=1` twice
 must be byte-identical and `--seed=2` must differ (org invariant 5). Format:
 `git ls-files '*.h' '*.cc' | xargs clang-format-18 --dry-run -Werror` with the org
 `.clang-format`. The suite

@@ -9,6 +9,6 @@ build_lib(
   LIBNAME swarm-core
   SOURCE_FILES model/swarm-core.cc
   HEADER_FILES model/swarm-core.h
-  LIBRARIES_TO_LINK ${libcore}
+  LIBRARIES_TO_LINK ${libcore} ${libnetwork} ${libinternet}
   TEST_SOURCES test/swarm-core-test-suite.cc
 )
