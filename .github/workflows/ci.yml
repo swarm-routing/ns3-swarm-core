@@ -15,6 +15,9 @@ on:
       ns3-versions:
         description: 'On demand: JSON list of older ns-3 releases (3.42+), e.g. ["3.48"]'
         default: ''
+      profiles:
+        description: 'On demand: JSON list of image profiles. Older releases have a debug image; a sanitized one only where it was built on request (e.g. 3.48)'
+        default: '["debug"]'
 
 permissions:
   contents: read
@@ -26,6 +29,9 @@ jobs:
     with:
       modules: swarm-core=.
       ns3-versions: ${{ inputs.ns3-versions || '["latest"]' }}
+      # Automatic runs: both CI profiles of `latest`. A manual run on older
+      # releases defaults to debug, the profile every published release has.
+      profiles: ${{ inputs.ns3-versions != '' && inputs.profiles || '["debug", "sanitized"]' }}
       # Strict warnings and coverage need an image whose ns3-build-contrib has the
       # options; on-demand older releases may predate them, so they run on the
       # automatic `latest` legs only.
