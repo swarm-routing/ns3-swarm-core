@@ -34,7 +34,7 @@ the module builds inside `ghcr.io/swarm-routing/ns3-dev:latest-{debug,sanitized}
 (warm ns-3 tree; only the module compiles) and runs its test.py suites.
 `latest` is the release ns-3 supports (it maintains its latest only), so
 automatic CI follows ns-3 with no edit; an older ns-3 release runs only on
-demand, through a manual `workflow_dispatch` passing `versions` (org
+demand, through a manual `workflow_dispatch` passing `ns3-versions`, a JSON list such as `["3.48"]` (org
 CONTRIBUTING invariant 7). The
 same locally:
 
