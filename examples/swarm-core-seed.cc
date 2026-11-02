@@ -3,7 +3,9 @@
 //
 // Prints the first draws of a seeded stream. CI's determinism gate runs it
 // twice with --seed=1 (output must be byte-identical) and once with --seed=2
-// (output must differ), until the module's own primitives give it more to run.
+// (output must differ). The seed itself is not printed: a label that changes
+// with the seed would make "seed 2 differs" pass even if the seed were ignored.
+// It is the gate's program until the module's own primitives give it more.
 #include "ns3/command-line.h"
 #include "ns3/random-variable-stream.h"
 #include "ns3/swarm-core-module.h"
@@ -25,7 +27,7 @@ int main(int argc, char* argv[]) {
     Ptr<UniformRandomVariable> u = CreateObject<UniformRandomVariable>();
     std::cout << std::setprecision(17);
     for (uint32_t i = 0; i < draws; ++i) {
-        std::cout << "##DRAW## seed=" << seed << " i=" << i << " u=" << u->GetValue() << "\n";
+        std::cout << "##DRAW## i=" << i << " u=" << u->GetValue() << "\n";
     }
     return 0;
 }

@@ -47,7 +47,8 @@ docker run --rm -v "$PWD:/src/swarm-core:ro" ghcr.io/swarm-routing/ns3-dev:lates
 as errors (our code only; ns-3's headers are exempt). CI also reports coverage
 (report-only) and runs the determinism gate: `swarm-core-seed --seed=1` twice
 must be byte-identical and `--seed=2` must differ (org invariant 5). Format:
-`clang-format-18 --dry-run -Werror` with the org `.clang-format`. The suite
+`git ls-files '*.h' '*.cc' | xargs clang-format-18 --dry-run -Werror` with the org
+`.clang-format`. The suite
 needs ns-3.42+ (scoped `TestCase::Duration`).
 
 ## Golden rules (invariants — do not break)

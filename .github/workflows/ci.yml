@@ -26,8 +26,11 @@ jobs:
     with:
       modules: swarm-core=.
       ns3-versions: ${{ inputs.ns3-versions || '["latest"]' }}
-      strict-warnings: true
-      coverage: true
+      # Strict warnings and coverage need an image whose ns3-build-contrib has the
+      # options; on-demand older releases may predate them, so they run on the
+      # automatic `latest` legs only.
+      strict-warnings: ${{ inputs.ns3-versions == '' }}
+      coverage: ${{ inputs.ns3-versions == '' }}
       determinism: swarm-core-seed --seed={seed}
       dual-roots: 'core/ tools/'
       core-roots: 'core/'
