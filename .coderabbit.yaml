@@ -1,3 +1,4 @@
+# org-sync:begin coderabbit-head
 # yaml-language-server: $schema=https://coderabbit.ai/integrations/schema.v2.json
 # CodeRabbit review settings (org decision 2026-11-01, swarm-routing/ns3-containers#18):
 # the per-PR AI reviewer for every public swarm-routing repository. Comments
@@ -10,9 +11,17 @@ reviews:
   poem: false
   review_status: true
   collapse_walkthrough: true
+  # Review budget (org decision 2026-11-02, swarm-routing/.github#37): review
+  # each PR once when it opens; re-review on request (`@coderabbitai review`),
+  # not on every push. Skip Dependabot bumps, which CI already checks.
+  # (No title filter: ignore_title_keywords matches anywhere in a title, so
+  # "style:" would also skip e.g. "fix: keep style: attributes".)
   auto_review:
     enabled: true
     drafts: false
+    auto_incremental_review: false
+    ignore_usernames:
+      - "dependabot[bot]"
   path_filters:
     - "!**/*.pdf"
   path_instructions:
@@ -33,7 +42,11 @@ reviews:
         any code that looks copied from ns-3's src/aodv or src/olsr.
     - path: ".github/workflows/**"
       instructions: >-
-        Actions are pinned by full commit SHA with a `# vX.Y.Z` comment; permissions
+        Third-party actions are pinned by full commit SHA with a `# vX.Y.Z` comment;
+        the org's own workflows (any `uses: swarm-routing/.github/.github/workflows/*`,
+        e.g. reusable-*.yml, sync-labels.yml) are called at @main by maintainer
+        decision (2026-11-02, swarm-routing/.github rule 10), so do not ask to
+        SHA-pin them. Permissions
         are minimal; transient artifacts use retention-days <= 7. Automatic CI targets
         ghcr.io/swarm-routing/ns3-dev:latest-<profile> (the ns-3 release ns-3
         supports); older ns-3 releases only on demand via workflow_dispatch (org
@@ -43,6 +56,7 @@ reviews:
         Docs are for ns-3 developers: commands must be runnable and exact; no invented
         numbers, DOIs or citations; paywalled papers never committed to public
         repositories.
+# org-sync:end coderabbit-head
     - path: "core/**"
       instructions: >-
         core/ is simulator-free and MIT OR GPL-2.0-only: it includes only the C++
@@ -60,6 +74,7 @@ reviews:
         Wire formats are POD, little-endian, bounds-checked, with a leading version
         byte and deterministic roundtrip + fuzz tests; a field or unit change bumps
         the version byte.
+# org-sync:begin coderabbit-tail
   tools:
     shellcheck:
       enabled: true
@@ -82,3 +97,4 @@ knowledge_base:
       - "LICENSING.md"
 chat:
   auto_reply: true
+# org-sync:end coderabbit-tail
