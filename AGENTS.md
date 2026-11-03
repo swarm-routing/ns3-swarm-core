@@ -7,7 +7,7 @@ before changing anything. Org-wide conventions:
 
 ## What this repo is
 
-**Status: empty, populated in Phase 2.** The layout below is the plan; update this file in the PR that creates it.
+**Status: skeleton (#7).** CI runs every org quality gate on the module; the primitives arrive in `core/` with #8 and the ns-3 glue in `model/` with #9. Directories marked (planned) do not exist yet: update this file in the PR that creates each.
 
 The shared ns-3 contrib module `swarm-core` (`libns3.<ver>-swarm-core`) every
 swarm-routing protocol links against: simulator-agnostic C++20 primitives
@@ -18,12 +18,13 @@ AntHocNet's dual-licensed `core/`, plus ns-3 cross-layer glue
 `EnergyMetricHook` over `ns3::EnergySource`, `IslLinkMonitor`).
 
 ```
-CMakeLists.txt      build_lib(LIBNAME swarm-core ...)
-core/               simulator-free primitives — MIT OR GPL-2.0-only, carries core/LICENSE
-model/              ns-3 glue — GPL-2.0-only
-helper/             ns-3 helpers
+CMakeLists.txt      build_lib(LIBNAME swarm-core ...); ns-3 generates ns3/swarm-core-module.h
+core/               (planned, #8) simulator-free primitives — MIT OR GPL-2.0-only, carries core/LICENSE
+model/              ns-3 glue — GPL-2.0-only (today: kSwarmCoreApiVersion, SwarmCoreSeed)
+helper/             (planned) ns-3 helpers
 test/               swarm-core test suite (roundtrip, fuzz, primitives, glue)
-examples/
+examples/           swarm-core-seed: the determinism gate's program until the primitives give it more
+.github/workflows/  ci.yml (reusable-ns3-ci: strict warnings, coverage, determinism, format, headers), pr-title.yml
 ```
 
 ## Build & verify
@@ -33,16 +34,25 @@ the module builds inside `ghcr.io/swarm-routing/ns3-dev:latest-{debug,sanitized}
 (warm ns-3 tree; only the module compiles) and runs its test.py suites.
 `latest` is the release ns-3 supports (it maintains its latest only), so
 automatic CI follows ns-3 with no edit; an older ns-3 release runs only on
-demand, through a manual `workflow_dispatch` passing `versions` (org
+demand, through a manual `workflow_dispatch` passing `ns3-versions`, a JSON list such as `["3.48"]` (org
 CONTRIBUTING invariant 7). The
 same locally:
 
 ```bash
 docker run --rm -v "$PWD:/src/swarm-core:ro" ghcr.io/swarm-routing/ns3-dev:latest-debug \
-    ns3-build-contrib --test swarm-core=/src/swarm-core
+    ns3-build-contrib --strict-warnings --test swarm-core=/src/swarm-core
 ```
 
-`test.py -s swarm-core` must pass on debug and sanitized.
+Automatic runs (push, PR: `latest`) must pass `test.py -s swarm-core` on debug
+and sanitized, with strict warnings as errors (our code only; ns-3's headers
+are exempt), and report coverage (report-only). A manual run on older releases
+(`ns3-versions`) uses its `profiles` input (default debug) without strict
+warnings or coverage, since older images may predate those options. Every run
+has the determinism gate: `swarm-core-seed --seed=1` twice
+must be byte-identical and `--seed=2` must differ (org invariant 5). Format:
+`git ls-files '*.h' '*.cc' | xargs clang-format-18 --dry-run -Werror` with the org
+`.clang-format`. The suite
+needs ns-3.42+ (scoped `TestCase::Duration`).
 
 ## Golden rules (invariants — do not break)
 

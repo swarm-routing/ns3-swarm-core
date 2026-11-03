@@ -1,0 +1,42 @@
+# Copyright (c) 2026 Daniel Joppi (https://github.com/swarm-routing)
+# SPDX-License-Identifier: GPL-2.0-only
+name: CI
+
+# The swarm-core module in ghcr.io/swarm-routing/ns3-dev (debug and sanitized,
+# the release ns-3 supports), with every org quality gate on from the first
+# PR (swarm-routing/.github#35): strict warnings, coverage (report-only),
+# determinism, clang-format and licence headers.
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+    inputs:
+      ns3-versions:
+        description: 'On demand: JSON list of older ns-3 releases (3.42+), e.g. ["3.48"]'
+        default: ''
+      profiles:
+        description: 'On demand: JSON list of image profiles. Older releases have a debug image; a sanitized one only where it was built on request (e.g. 3.48)'
+        default: '["debug"]'
+
+permissions:
+  contents: read
+  packages: read
+
+jobs:
+  ci:
+    uses: swarm-routing/.github/.github/workflows/reusable-ns3-ci.yml@main
+    with:
+      modules: swarm-core=.
+      ns3-versions: ${{ inputs.ns3-versions || '["latest"]' }}
+      # Automatic runs: both CI profiles of `latest`. A manual run on older
+      # releases defaults to debug, the profile every published release has.
+      profiles: ${{ inputs.ns3-versions != '' && inputs.profiles || '["debug", "sanitized"]' }}
+      # Strict warnings and coverage need an image whose ns3-build-contrib has the
+      # options; on-demand older releases may predate them, so they run on the
+      # automatic `latest` legs only.
+      strict-warnings: ${{ inputs.ns3-versions == '' }}
+      coverage: ${{ inputs.ns3-versions == '' }}
+      determinism: swarm-core-seed --seed={seed}
+      dual-roots: 'core/ tools/'
+      core-roots: 'core/'
