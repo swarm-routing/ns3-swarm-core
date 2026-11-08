@@ -17,8 +17,8 @@ the rules and how to build and verify; the org conventions are in
 
 What is planned and in progress here: the issues labelled [`epic`](https://github.com/swarm-routing/ns3-swarm-core/issues?q=label%3Aepic). An epic's open sub-issues carry a `priority:*` and a `model:*` label, so a contributor or an AI agent can pick one up ([how issues work](https://github.com/swarm-routing/.github/blob/main/CONTRIBUTING.md#issues)). The whole org's plan: the [roadmap](https://github.com/swarm-routing/.github/blob/main/ROADMAP.md#epics).
 
-| Epic | Status | Sub-issues done |
-|------|--------|-----------------|
+| Epic | Status | Sub-issues closed |
+|------|--------|-------------------|
 | [#6](https://github.com/swarm-routing/ns3-swarm-core/issues/6) swarm-core: the shared contrib module every swarm protocol links (Phase 2) | In progress | 1 / 8 |
 
 <!-- epics:end -->
