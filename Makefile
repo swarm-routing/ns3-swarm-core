@@ -1,5 +1,5 @@
 # Copyright (c) 2026 Daniel Joppi (https://github.com/swarm-routing)
-# SPDX-License-Identifier: MIT OR GPL-2.0-only
+# SPDX-License-Identifier: GPL-2.0-only
 #
 # ns3-swarm-core: the org's standard targets (swarm-routing/.github#11). Every org
 # repo has these same target names, with this repo's own commands behind them;

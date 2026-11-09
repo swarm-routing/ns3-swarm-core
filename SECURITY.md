@@ -12,9 +12,10 @@ tool: the parsers of files it reads. If nothing parses untrusted input, say
 so in one line. -->
 The bounds-checked little-endian readers in `core/` (org invariant 3): they
 never read past the buffer, they reject a short or malformed buffer, and they
-have no undefined behaviour, backed by roundtrip and fuzz tests in `test/`.
-Everything above them (routing decisions) belongs to each protocol. The
-readers arrive with #8; until then nothing here parses untrusted input.
+have no undefined behaviour, to be backed by roundtrip and fuzz tests in
+`test/`. Everything above them (routing decisions) belongs to each protocol.
+The readers and their tests are planned (#8); today `test/` covers the seed
+helper only, and nothing here parses untrusted input.
 
 ## Known, by-design limitations (out of scope)
 
