@@ -1,0 +1,14 @@
+# Managed by swarm-routing/.github tools/org-sync: edit templates/workflows/org-sync.yml there.
+name: org-sync
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+permissions:
+  contents: read
+
+jobs:
+  check:
+    uses: swarm-routing/.github/.github/workflows/reusable-org-sync-check.yml@main
