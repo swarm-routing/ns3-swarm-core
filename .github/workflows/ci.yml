@@ -4,7 +4,7 @@ name: CI
 
 # The swarm-core module in ghcr.io/swarm-routing/ns3-dev (debug and sanitized,
 # the release ns-3 supports), with every org quality gate on from the first
-# PR (swarm-routing/.github#35): strict warnings, coverage (report-only),
+# PR (swarm-routing/.github#35): strict warnings, coverage (report-only, to Codecov), SonarQube Cloud,
 # determinism, clang-format and licence headers.
 on:
   push:
@@ -37,6 +37,24 @@ jobs:
       # automatic `latest` legs only.
       strict-warnings: ${{ inputs.ns3-versions == '' }}
       coverage: ${{ inputs.ns3-versions == '' }}
+      # SonarQube Cloud CI analysis with that coverage (swarm-routing/.github
+      # CONTRIBUTING § Quality gates); skipped on fork PRs (no token) and while
+      # the project is on Automatic Analysis.
+      sonar: ${{ inputs.ns3-versions == '' }}
       determinism: swarm-core-seed --seed={seed}
       dual-roots: 'core/ tools/'
       core-roots: 'core/'
+    secrets:
+      SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
+
+  # The coverage report of the `ci` job to Codecov (report-only; OIDC, or the
+  # CODECOV_TOKEN secret when set).
+  codecov:
+    needs: ci
+    if: inputs.ns3-versions == ''
+    permissions:
+      contents: read
+      id-token: write
+    uses: swarm-routing/.github/.github/workflows/reusable-codecov.yml@main
+    secrets:
+      CODECOV_TOKEN: ${{ secrets.CODECOV_TOKEN }}
