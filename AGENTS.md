@@ -58,6 +58,7 @@ needs ns-3.42+ (scoped `TestCase::Duration`).
 
 Org-wide (1–9), then this repo's own.
 
+<!-- org-sync:begin org-rules -->
 1. **Licensing per directory, as AntHocNet** ([`LICENSING.md`](LICENSING.md);
    AntHocNet [LICENSING.md](https://github.com/danieljoppi/AntHocNet/blob/main/LICENSING.md),
    [ADR-0028](https://github.com/danieljoppi/AntHocNet/blob/main/docs/adr/0028-core-is-dual-licensed.md)). A
@@ -99,6 +100,7 @@ Org-wide (1–9), then this repo's own.
    buildx caches scoped per profile; transient artifacts `retention-days` <= 7.
 9. **Nothing shipped depends on `.claude/`.** Skills hold procedures; scripts
    that anything shipped needs live in `tools/` (AntHocNet ADR-0014).
+<!-- org-sync:end org-rules -->
 10. **`core/` includes no simulator header.** The primitives take time, randomness, neighbours and deferred work through injected ports (as AntHocNet's `core/ports.h`), so they stay reusable, unit-testable and MIT-optional; only `model/` (GPL) includes `ns3/*`.
 11. **No protocol logic here.** swarm-core holds what two or more protocols share. A protocol's decision rules live in its own repo; promote code here only when a second protocol needs it.
 12. **Downstream API stability.** ARA, BeeAdHoc and later protocols build against `main`: a breaking API change lands with the downstream fixes or an issue in each consumer.
@@ -106,6 +108,7 @@ Org-wide (1–9), then this repo's own.
 
 ## Conventions
 
+<!-- org-sync:begin conventions -->
 - Issues follow the org taxonomy ([CONTRIBUTING.md](https://github.com/swarm-routing/.github/blob/main/CONTRIBUTING.md#issues), from
   [AntHocNet ADR-0013](https://github.com/danieljoppi/AntHocNet/blob/main/docs/adr/0013-track-bugs-and-findings-as-issues.md)): one type label
   (`bug`/`enhancement`/`chore`/`documentation`/`verification`, plus `epic` for
@@ -142,9 +145,11 @@ Org-wide (1–9), then this repo's own.
   and keep no generated section.
 - Make minimal, reviewable changes; update the relevant doc/ADR when you change
   a documented decision.
+<!-- org-sync:end conventions -->
 
 ## Git workflow
 
+<!-- org-sync:begin git-workflow -->
 - Branch from `main` (`claude/<short-topic>`), one focused change per PR.
 - **Always open a PR to `main`** once the branch is pushed — every change is
   tracked through one.
@@ -152,6 +157,33 @@ Org-wide (1–9), then this repo's own.
   the commit on `main`, so it is a lowercase Conventional Commit
   (`feat:`/`fix:`/`docs:`/`chore:`/`ci:`…, optional scope).
 - Push with `git push -u origin <branch>`; merge when CI is green.
+<!-- org-sync:end git-workflow -->
+
+<!-- org-sync:begin skills -->
+## Agent skills
+
+The org's procedures ship as the Claude Code plugin **`swarm-routing`**, from
+[`swarm-routing/skills`](https://github.com/swarm-routing/skills). This
+repository's `.claude/settings.json` enables it, so Claude Code offers a skill
+when the task matches its description. Other agents (Codex, Cursor, Copilot, …)
+install the same skills with `npx skills add swarm-routing/skills`
+([skills.sh](https://skills.sh)). A skill is the procedure; the script does the
+work and runs without it (golden rule 9), so an agent without the skill starts
+from the script. If Claude Code says the plugin is missing (it was called
+`org-repo` before 2026-11-09, and a cached marketplace keeps the old list), run
+`claude plugin marketplace update swarm-routing` and start a new session.
+
+| Task | Script (any agent) | Skill |
+|------|--------------------|-------|
+| Bring this repository onto the org templates, or fix their drift | `swarm-routing/.github` `tools/org-sync/org_sync.py` | `org-repo` |
+| Write or review a protocol's paper-fidelity sheet (`docs/fidelity.md`) | `swarm-routing/.github` `tools/fidelity/fidelity.py` | `fidelity-sheet` |
+
+A skill only this repository uses lives in its own `.claude/skills/`; a skill
+two repositories need moves to the plugin. Skills that read the private papers
+library stay in `swarm-routing/papers`. This section is managed by org-sync: add
+a row in `swarm-routing/.github` `templates/agents/skills.md`, not here (an edit
+here is undone by the next `org_sync.py apply`).
+<!-- org-sync:end skills -->
 
 ## Where to look
 

@@ -1,0 +1,13 @@
+{
+  "extraKnownMarketplaces": {
+    "swarm-routing": {
+      "source": {
+        "source": "github",
+        "repo": "swarm-routing/skills"
+      }
+    }
+  },
+  "enabledPlugins": {
+    "swarm-routing@swarm-routing": true
+  }
+}

@@ -1,0 +1,21 @@
+# org-sync configuration (swarm-routing/.github tools/org-sync).
+kind = "protocol"
+title = "ns3-swarm-core"
+module = "swarm-core"
+dual = ["core/", "tools/"]
+trust_boundary = """
+The bounds-checked little-endian readers in `core/` (org invariant 3): they
+never read past the buffer, they reject a short or malformed buffer, and they
+have no undefined behaviour, backed by roundtrip and fuzz tests in `test/`.
+Everything above them (routing decisions) belongs to each protocol. The
+readers arrive with #8; until then nothing here parses untrusted input."""
+limitations = """
+- No authentication or integrity on anything: a simulation library, not a
+  network stack for real radios.
+- Downstream protocols build against `main`; there is no release to pin yet."""
+verifying = """
+Nothing is released yet, so there is nothing to verify. Downstream
+repositories build against `main`."""
+[make]
+build = 'docker run --rm -v "$(CURDIR):/src/swarm-core:ro" $(NS3_IMAGE) ns3-build-contrib swarm-core=/src/swarm-core'
+test = 'docker run --rm -v "$(CURDIR):/src/swarm-core:ro" $(NS3_IMAGE) ns3-build-contrib --strict-warnings --test swarm-core=/src/swarm-core'

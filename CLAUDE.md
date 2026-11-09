@@ -10,6 +10,7 @@ layered on top.
 
 @AGENTS.md
 
+<!-- org-sync:begin org -->
 **Handoffs are always a ticket.** When a session ends with work in flight, or a
 handoff is asked for, open a GitHub issue from the *Handoff* template (label
 `handoff`). Never write a handoff file in the repo. Start a new session from
@@ -47,3 +48,4 @@ record* detailed, never terse: commit messages, PR bodies, ADRs, `docs/`, and
 issue / finding threads. Cross-session traceability depends on those being
 complete — AntHocNet's AC_BE_NQOS / A2 investigation was only recoverable
 because the issue threads were thorough. Caveman the chat, not the record.
+<!-- org-sync:end org -->
