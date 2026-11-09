@@ -47,8 +47,8 @@ jobs:
     secrets:
       SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
 
-  # The coverage report of the `ci` job to Codecov (report-only; OIDC, or the
-  # CODECOV_TOKEN secret when set).
+  # The coverage report of the `ci` job to Codecov (report-only; GitHub OIDC,
+  # no Codecov token).
   codecov:
     needs: ci
     if: inputs.ns3-versions == ''
@@ -56,5 +56,3 @@ jobs:
       contents: read
       id-token: write
     uses: swarm-routing/.github/.github/workflows/reusable-codecov.yml@main
-    secrets:
-      CODECOV_TOKEN: ${{ secrets.CODECOV_TOKEN }}
