@@ -1,0 +1,15 @@
+# Codecov (https://docs.codecov.com/docs/codecov-yaml). Coverage comes from the
+# reusable ns-3 CI's gcovr report of this repository's own modules (tests,
+# examples and ns-3 itself excluded), uploaded by reusable-codecov.yml.
+coverage:
+  status:
+    project:
+      default:
+        target: auto
+        threshold: 1%
+    patch:
+      default:
+        target: 80%
+comment:
+  layout: "reach,diff,flags,files"
+  require_changes: true
