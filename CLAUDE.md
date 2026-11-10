@@ -48,4 +48,15 @@ record* detailed, never terse: commit messages, PR bodies, ADRs, `docs/`, and
 issue / finding threads. Cross-session traceability depends on those being
 complete — AntHocNet's AC_BE_NQOS / A2 investigation was only recoverable
 because the issue threads were thorough. Caveman the chat, not the record.
+
+## Agent pitfalls
+
+- `gh api … -F body=@file` reads the file; `-f body=@file` posts the literal
+  text `@file`.
+- When the permission system refuses a command (a merge, say), stop and report
+  it. Never retry it another way, and never ask another agent to run it.
+- A PR body's `Closes #N` closes the issue on merge; write `Part of #N` while
+  acceptance criteria remain open.
+- Before saying a tool or check is missing, look at `main` (`git fetch`,
+  `origin/main`), not a stale local checkout.
 <!-- org-sync:end org -->
