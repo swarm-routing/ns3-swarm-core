@@ -21,7 +21,11 @@ links against: simulator-agnostic C++20 primitives (visited path, little-endian
 wire helpers, pheromone table, route decision, link-state and link-metric
 seams) and ns-3 cross-layer glue. **Status:** the primitives are in `core/`
 (namespace `swarm::core`, `MIT OR GPL-2.0-only`, buildable and testable without
-ns-3); the ns-3 glue arrives in `model/` with its epic below. CI runs every org
+ns-3); the ns-3 glue is in `model/` and `helper/` (`GPL-2.0-only`):
+`SwarmRoutingBase`, the `Ipv4RoutingProtocol` a protocol's adapter derives from;
+`DeferredPacketQueue`; the link monitors `WifiLinkMonitor`, `IslLinkMonitor` and
+`EnergyMetricHook`, which implement the core's ports; and `SwarmRoutingHelper`,
+which installs a protocol and its monitors in one call. CI runs every org
 quality gate.
 
 How to work here, for people and AI agents alike: [AGENTS.md](AGENTS.md) has
@@ -37,7 +41,7 @@ What is planned and in progress here: the issues labelled [`epic`](https://githu
 
 | Epic | Status | Sub-issues closed |
 |------|--------|-------------------|
-| [#6](https://github.com/swarm-routing/ns3-swarm-core/issues/6) swarm-core: the shared contrib module every swarm protocol links (Phase 2) | In progress | 2 / 8 |
+| [#6](https://github.com/swarm-routing/ns3-swarm-core/issues/6) swarm-core: the shared contrib module every swarm protocol links (Phase 2) | In progress | 1 / 8 |
 
 <!-- epics:end -->
 
