@@ -15,10 +15,39 @@ protocol."""
 limitations = """
 - No authentication or integrity on anything: a simulation library, not a
   network stack for real radios.
-- Downstream protocols build against `main`; there is no release to pin yet."""
+- Releases are 0.x (v0.1.0 on): the API may change in any minor release;
+  `kSwarmCoreApiVersion` names the API a build has. Downstream protocols
+  build against `main` or pin a release."""
 verifying = """
-Nothing is released yet, so there is nothing to verify. Downstream
-repositories build against `main`."""
+Releases from v0.1.0 on (epic #6) are built, signed and published by the
+org's release workflow (`swarm-routing/.github` `reusable-release.yml`,
+called by `.github/workflows/release.yml`). Each carries
+`swarm-core-X.Y.Z.tar.gz` (the module, for ns-3's `contrib/`, with the
+dual-licensed `core/`), `SHA256SUMS`, a CycloneDX SBOM
+(`ns3-swarm-core-X.Y.Z.cdx.json`) and signed SLSA build provenance for every
+asset (`ns3-swarm-core-X.Y.Z.intoto.jsonl`, and the Sigstore bundle
+`ns3-swarm-core-X.Y.Z.sigstore.json` for offline checks). The workflow runs
+these checks itself before it publishes, and first builds the tarball in a
+clean `ns3-dev` tree, runs `test.py -s swarm-core` and builds and tests
+`core/` alone, so a release that fails any of them never goes out. With the
+[GitHub CLI](https://cli.github.com/):
+
+```bash
+sha256sum -c SHA256SUMS --ignore-missing
+gh attestation verify swarm-core-X.Y.Z.tar.gz --repo swarm-routing/ns3-swarm-core \\
+  --signer-workflow swarm-routing/.github/.github/workflows/reusable-release.yml
+gh attestation verify swarm-core-X.Y.Z.tar.gz --repo swarm-routing/ns3-swarm-core \\
+  --predicate-type https://cyclonedx.org/bom
+gh attestation verify swarm-core-X.Y.Z.tar.gz --repo swarm-routing/ns3-swarm-core \\
+  --bundle ns3-swarm-core-X.Y.Z.sigstore.json   # offline
+```
+
+The signer is the org's reusable workflow; this repository is in the
+certificate's workflow-repository extension. Each release also publishes the
+image `ghcr.io/swarm-routing/ns3-swarm-core-ns3:vX.Y.Z-optimized` and
+`-debug`, the module built on a pinned `ns3-dev` digest, signed with cosign
+(keyless): see `swarm-routing/.github` `reusable-ns3-image.yml` for its
+verify commands."""
 [make]
 build = 'docker run --rm -v "$(CURDIR):/src/swarm-core:ro" $(NS3_IMAGE) ns3-build-contrib swarm-core=/src/swarm-core'
 test = 'docker run --rm -v "$(CURDIR):/src/swarm-core:ro" $(NS3_IMAGE) ns3-build-contrib --strict-warnings --test swarm-core=/src/swarm-core'
@@ -33,3 +62,5 @@ required_checks = ["ci / ns-latest debug", "ci / ns-latest sanitized", "ci / for
 # Merge through a merge queue (swarm-routing/.github#130); every workflow behind a required
 # check also runs on merge_group.
 merge_queue = true
+# The publish job of release.yml waits for the maintainer (CONTRIBUTING "Cutting a release").
+release_environment = true

@@ -23,7 +23,9 @@ protocol.
 
 - No authentication or integrity on anything: a simulation library, not a
   network stack for real radios.
-- Downstream protocols build against `main`; there is no release to pin yet.
+- Releases are 0.x (v0.1.0 on): the API may change in any minor release;
+  `kSwarmCoreApiVersion` names the API a build has. Downstream protocols
+  build against `main` or pin a release.
 
 <!-- org-sync:begin reporting -->
 ## Reporting a vulnerability
@@ -37,5 +39,32 @@ best-effort basis: expect an acknowledgement within a few days, not an SLA.
 
 ## Verifying what it ships
 
-Nothing is released yet, so there is nothing to verify. Downstream
-repositories build against `main`.
+Releases from v0.1.0 on (epic #6) are built, signed and published by the
+org's release workflow (`swarm-routing/.github` `reusable-release.yml`,
+called by `.github/workflows/release.yml`). Each carries
+`swarm-core-X.Y.Z.tar.gz` (the module, for ns-3's `contrib/`, with the
+dual-licensed `core/`), `SHA256SUMS`, a CycloneDX SBOM
+(`ns3-swarm-core-X.Y.Z.cdx.json`) and signed SLSA build provenance for every
+asset (`ns3-swarm-core-X.Y.Z.intoto.jsonl`, and the Sigstore bundle
+`ns3-swarm-core-X.Y.Z.sigstore.json` for offline checks). The workflow runs
+these checks itself before it publishes, and first builds the tarball in a
+clean `ns3-dev` tree, runs `test.py -s swarm-core` and builds and tests
+`core/` alone, so a release that fails any of them never goes out. With the
+[GitHub CLI](https://cli.github.com/):
+
+```bash
+sha256sum -c SHA256SUMS --ignore-missing
+gh attestation verify swarm-core-X.Y.Z.tar.gz --repo swarm-routing/ns3-swarm-core \
+  --signer-workflow swarm-routing/.github/.github/workflows/reusable-release.yml
+gh attestation verify swarm-core-X.Y.Z.tar.gz --repo swarm-routing/ns3-swarm-core \
+  --predicate-type https://cyclonedx.org/bom
+gh attestation verify swarm-core-X.Y.Z.tar.gz --repo swarm-routing/ns3-swarm-core \
+  --bundle ns3-swarm-core-X.Y.Z.sigstore.json   # offline
+```
+
+The signer is the org's reusable workflow; this repository is in the
+certificate's workflow-repository extension. Each release also publishes the
+image `ghcr.io/swarm-routing/ns3-swarm-core-ns3:vX.Y.Z-optimized` and
+`-debug`, the module built on a pinned `ns3-dev` digest, signed with cosign
+(keyless): see `swarm-routing/.github` `reusable-ns3-image.yml` for its
+verify commands.

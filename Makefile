@@ -16,7 +16,7 @@ ORG_DIR   ?= $(HOME)/.cache/swarm-routing/dotgithub
 ORG_REF   ?= main
 
 .DEFAULT_GOAL := help
-.PHONY: help build test lint format check clean shell ci headers org-sync-check org-tools core-test
+.PHONY: help build test lint format check clean shell ci headers org-sync-check org-tools core-test dist
 
 help: ## list the targets
 	@awk 'BEGIN{FS=":.*## "} /^[a-zA-Z0-9_-]+:.*## /{printf "  %-16s %s\n", $$1, $$2}' $(MAKEFILE_LIST)
@@ -34,7 +34,7 @@ format: ## apply the formatters
 	git ls-files "*.h" "*.cc" "*.cpp" "*.hpp" | xargs -r clang-format -i
 
 clean: ## remove build outputs
-	rm -rf build
+	rm -rf build dist
 
 shell: ## an interactive shell in the dev image with this repo at /src
 	@command -v docker >/dev/null || { echo "make shell: docker not found (Docker Desktop, Colima, or docker.io)" >&2; exit 127; }
@@ -56,3 +56,10 @@ ci: check ## exactly what CI runs
 
 core-test: ## core/ alone, no ns-3: plain CMake + ctest with CI's strict warnings
 	cmake -S core -B build/core && cmake --build build/core && ctest --test-dir build/core --output-on-failure
+
+# The release asset (epic #6) for swarm-routing/.github's reusable-release.yml,
+# which sets RELEASE_VERSION; locally it defaults to VERSION. DIST_CHECK=0
+# skips the check (the tarball's suite in NS3_IMAGE, core/ alone).
+RELEASE_VERSION ?= $(shell cat VERSION)
+dist: ## the release asset in dist/: the swarm-core module tarball, checked
+	NS3_IMAGE=$(NS3_IMAGE) tools/release/dist.sh $(RELEASE_VERSION) dist

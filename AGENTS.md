@@ -39,7 +39,10 @@ test/               swarm-core test suite: wraps every core/test/ function as a 
                     (swarm-glue-tests.cc: a toy protocol on the base, a 2-3 node scenario per monitor, and
                     same-seed byte-identical output with and without every monitor)
 examples/           swarm-core-seed: the determinism gate's program (seeded draws + a roulette sequence through IRng)
-.github/workflows/  ci.yml (reusable-ns3-ci: strict warnings, coverage, determinism, format, headers), pr-title.yml
+tools/release/      dist.sh: the release asset (swarm-core-<ver>.tar.gz), checked in a clean ns3-dev tree; `make dist` — MIT OR GPL-2.0-only
+.cz.toml, VERSION   Commitizen config and the version it bumps; releases run through release.yml
+.github/workflows/  ci.yml (reusable-ns3-ci: strict warnings, coverage, determinism, format, headers), pr-title.yml,
+                    release.yml (the org reusable-release.yml, then the ns3-swarm-core-ns3 image)
 ```
 
 ## Build & verify
@@ -77,6 +80,12 @@ must be byte-identical and `--seed=2` must differ (org invariant 5). Format:
 needs ns-3.42+ (scoped `TestCase::Duration`), and `core/` needs a tree that
 builds at C++20 or later (`std::span`, `std::bit_cast`; ns-3.49 builds at C++23).
 Licence headers and the include rule: `python3 -I ../.github/tools/checks/check-headers.py --dual core/ --dual tools/ --core core/ .`.
+
+Releases (epic #6; `swarm-routing/.github` CONTRIBUTING "Cutting a release"):
+dispatch `release.yml` with `dry-run`, then `bump`; merging the bot's
+`chore(release): bump version A to B` PR tags and publishes. `make dist`
+builds the asset locally (`DIST_CHECK=0` skips the docker suite and the
+`core/`-alone build).
 
 ## Golden rules (invariants — do not break)
 
