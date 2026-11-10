@@ -1,7 +1,7 @@
 The MIT option for the dual-licensed parts of swarm-routing/ns3-swarm-core
 (SPDX-License-Identifier: MIT OR GPL-2.0-only; see LICENSING.md):
 
-    core/         the simulator-free primitives (no ns-3 header; carries `core/LICENSE` once it exists)
+    core/         the simulator-free primitives (no ns-3 header; carries `core/LICENSE`)
     tools/        standalone scripts (checks, release, data handling)
 
 Each file in those paths says which licence it carries in its

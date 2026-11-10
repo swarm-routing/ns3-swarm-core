@@ -2,10 +2,18 @@
 // SPDX-License-Identifier: GPL-2.0-only
 //
 // Needs ns-3.42+ (scoped TestCase::Duration); older releases are on demand only.
+//
+// The core/ tests (core/test/, one function per primitive) run here as one
+// TestCase each, so test.py covers them on the debug and sanitized legs; the
+// same functions run without ns-3 under core/CMakeLists.txt.
+#include "../core/test/swarm-core-tests.h"
+
 #include "ns3/swarm-core-module.h"
 #include "ns3/random-variable-stream.h"
 #include "ns3/rng-seed-manager.h"
 #include "ns3/test.h"
+
+#include <string>
 
 using namespace ns3;
 
@@ -21,6 +29,24 @@ double FirstDraw(uint32_t seed) {
 }
 
 }  // namespace
+
+/// One core/ test function, its failures reported through ns-3.
+class SwarmCorePrimitiveTestCase : public TestCase {
+public:
+    explicit SwarmCorePrimitiveTestCase(const swarm::core::test::NamedTest& t)
+        : TestCase(std::string("core: ") + t.name), m_test(t) {}
+
+private:
+    void DoRun() override {
+        swarm::core::test::Checker c;
+        m_test.run(c);
+        for (const auto& f : c.failures()) {
+            NS_TEST_EXPECT_MSG_EQ(true, false, f);
+        }
+    }
+
+    swarm::core::test::NamedTest m_test;
+};
 
 class SwarmCoreSeedTestCase : public TestCase {
 public:
@@ -41,6 +67,9 @@ class SwarmCoreTestSuite : public TestSuite {
 public:
     SwarmCoreTestSuite() : TestSuite("swarm-core", Type::UNIT) {
         AddTestCase(new SwarmCoreSeedTestCase, TestCase::Duration::QUICK);
+        for (const auto& t : swarm::core::test::AllTests()) {
+            AddTestCase(new SwarmCorePrimitiveTestCase(t), TestCase::Duration::QUICK);
+        }
     }
 };
 

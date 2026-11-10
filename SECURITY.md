@@ -10,12 +10,14 @@ org-wide policy is [swarm-routing/.github SECURITY.md](https://github.com/swarm-
 code guarantees. A protocol: its wire-format decoder (org invariant 3). A
 tool: the parsers of files it reads. If nothing parses untrusted input, say
 so in one line. -->
-The bounds-checked little-endian readers in `core/` (org invariant 3): they
-never read past the buffer, they reject a short or malformed buffer, and they
-have no undefined behaviour, to be backed by roundtrip and fuzz tests in
-`test/`. Everything above them (routing decisions) belongs to each protocol.
-The readers and their tests are planned (#8); today `test/` covers the seed
-helper only, and nothing here parses untrusted input.
+The bounds-checked little-endian readers in `core/` (org invariant 3):
+`WireReader` (`core/swarm-wire.h`) and `VisitedPath::read` never read past the
+buffer, reject a short or malformed buffer (wrong version byte, bad bool,
+oversized count, trailing bytes) and fail closed, with no undefined
+behaviour. Roundtrip and seeded fuzz tests in `core/test/test-wire.cc` back
+this on every PR, including under ASan and UBSan. Everything above them
+(each protocol's header layout and routing decisions) belongs to each
+protocol.
 
 ## Known, by-design limitations (out of scope)
 
