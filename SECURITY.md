@@ -58,8 +58,9 @@ gh attestation verify swarm-core-X.Y.Z.tar.gz --repo swarm-routing/ns3-swarm-cor
   --signer-workflow swarm-routing/.github/.github/workflows/reusable-release.yml
 gh attestation verify swarm-core-X.Y.Z.tar.gz --repo swarm-routing/ns3-swarm-core \
   --predicate-type https://cyclonedx.org/bom
+gh attestation trusted-root > trusted_root.jsonl   # once, while online
 gh attestation verify swarm-core-X.Y.Z.tar.gz --repo swarm-routing/ns3-swarm-core \
-  --bundle ns3-swarm-core-X.Y.Z.sigstore.json   # offline
+  --bundle ns3-swarm-core-X.Y.Z.sigstore.json --custom-trusted-root trusted_root.jsonl   # offline
 ```
 
 The signer is the org's reusable workflow; this repository is in the
