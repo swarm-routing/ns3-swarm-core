@@ -12,6 +12,7 @@
 [![Bugs](https://sonarcloud.io/api/project_badges/measure?project=swarm-routing_ns3-swarm-core&metric=bugs)](https://sonarcloud.io/summary/new_code?id=swarm-routing_ns3-swarm-core)
 [![Security Rating](https://sonarcloud.io/api/project_badges/measure?project=swarm-routing_ns3-swarm-core&metric=security_rating)](https://sonarcloud.io/summary/new_code?id=swarm-routing_ns3-swarm-core)
 [![Maintainability Rating](https://sonarcloud.io/api/project_badges/measure?project=swarm-routing_ns3-swarm-core&metric=sqale_rating)](https://sonarcloud.io/summary/new_code?id=swarm-routing_ns3-swarm-core)
+[![codecov](https://codecov.io/gh/swarm-routing/ns3-swarm-core/graph/badge.svg)](https://codecov.io/gh/swarm-routing/ns3-swarm-core)
 [![CodeRabbit Pull Request Reviews](https://img.shields.io/coderabbit/prs/github/swarm-routing/ns3-swarm-core?utm_source=oss&utm_medium=github&utm_campaign=swarm-routing%2Fns3-swarm-core&labelColor=171717&color=FF570A&link=https%3A%2F%2Fcoderabbit.ai&label=CodeRabbit+Reviews)](https://coderabbit.ai)
 <!-- org-sync:end badges -->
 
