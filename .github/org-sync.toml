@@ -4,12 +4,14 @@ title = "ns3-swarm-core"
 module = "swarm-core"
 dual = ["core/", "tools/"]
 trust_boundary = """
-The bounds-checked little-endian readers in `core/` (org invariant 3): they
-never read past the buffer, they reject a short or malformed buffer, and they
-have no undefined behaviour, to be backed by roundtrip and fuzz tests in
-`test/`. Everything above them (routing decisions) belongs to each protocol.
-The readers and their tests are planned (#8); today `test/` covers the seed
-helper only, and nothing here parses untrusted input."""
+The bounds-checked little-endian readers in `core/` (org invariant 3):
+`WireReader` (`core/swarm-wire.h`) and `VisitedPath::read` never read past the
+buffer, reject a short or malformed buffer (wrong version byte, bad bool,
+oversized count, trailing bytes) and fail closed, with no undefined
+behaviour. Roundtrip and seeded fuzz tests in `core/test/test-wire.cc` back
+this on every PR, including under ASan and UBSan. Everything above them
+(each protocol's header layout and routing decisions) belongs to each
+protocol."""
 limitations = """
 - No authentication or integrity on anything: a simulation library, not a
   network stack for real radios.

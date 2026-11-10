@@ -7,7 +7,7 @@ before changing anything. Org-wide conventions:
 
 ## What this repo is
 
-**Status: skeleton (#7).** CI runs every org quality gate on the module; the primitives arrive in `core/` with #8 and the ns-3 glue in `model/` with #9. Directories marked (planned) do not exist yet: update this file in the PR that creates each.
+**Status: primitives in `core/` (#8).** CI runs every org quality gate on the module; the ns-3 glue arrives in `model/` with #9. Directories marked (planned) do not exist yet: update this file in the PR that creates each.
 
 The shared ns-3 contrib module `swarm-core` (`libns3.<ver>-swarm-core`) every
 swarm-routing protocol links against: simulator-agnostic C++20 primitives
@@ -19,11 +19,17 @@ AntHocNet's dual-licensed `core/`, plus ns-3 cross-layer glue
 
 ```
 CMakeLists.txt      build_lib(LIBNAME swarm-core ...); ns-3 generates ns3/swarm-core-module.h
-core/               (planned, #8) simulator-free primitives — MIT OR GPL-2.0-only, carries core/LICENSE
+core/               simulator-free primitives, namespace swarm::core — MIT OR GPL-2.0-only, carries core/LICENSE:
+                    swarm-types.h, swarm-ports.h (IClock, IRng, INeighborProvider, ITimerScheduler,
+                    ILinkState, ILinkQuality, IEnergy), swarm-wire.h (LE WireWriter/WireReader, version byte),
+                    swarm-visited-path.h, swarm-dedup-history.{h,cc}, swarm-pheromone-table.{h,cc},
+                    swarm-selection.{h,cc} (roulette, evaporationFactor), swarm-route-decision.h,
+                    swarm-link-metric.h (ILinkMetric); CMakeLists.txt builds it alone, no ns-3
+core/test/          the core tests, one function per primitive (MIT OR GPL-2.0-only); run by ctest and by test.py
 model/              ns-3 glue — GPL-2.0-only (today: kSwarmCoreApiVersion, SwarmCoreSeed)
 helper/             (planned) ns-3 helpers
-test/               swarm-core test suite (roundtrip, fuzz, primitives, glue)
-examples/           swarm-core-seed: the determinism gate's program until the primitives give it more
+test/               swarm-core test suite: wraps every core/test/ function as a TestCase, plus the glue's
+examples/           swarm-core-seed: the determinism gate's program (seeded draws + a roulette sequence through IRng)
 .github/workflows/  ci.yml (reusable-ns3-ci: strict warnings, coverage, determinism, format, headers), pr-title.yml
 ```
 
@@ -43,6 +49,13 @@ docker run --rm -v "$PWD:/src/swarm-core:ro" ghcr.io/swarm-routing/ns3-dev:lates
     ns3-build-contrib --strict-warnings --test swarm-core=/src/swarm-core
 ```
 
+`core/` alone, with no ns-3 tree (plain CMake; the same strict warnings as CI,
+`-DSWARM_CORE_SANITIZE=ON` for ASan + UBSan as the sanitized leg):
+
+```bash
+cmake -S core -B build/core && cmake --build build/core && ctest --test-dir build/core
+```
+
 Automatic runs (push, PR: `latest`) must pass `test.py -s swarm-core` on debug
 and sanitized, with strict warnings as errors (our code only; ns-3's headers
 are exempt), and report coverage (report-only). A manual run on older releases
@@ -52,7 +65,9 @@ has the determinism gate: `swarm-core-seed --seed=1` twice
 must be byte-identical and `--seed=2` must differ (org invariant 5). Format:
 `git ls-files '*.h' '*.cc' | xargs clang-format-18 --dry-run -Werror` with the org
 `.clang-format`. The suite
-needs ns-3.42+ (scoped `TestCase::Duration`).
+needs ns-3.42+ (scoped `TestCase::Duration`), and `core/` needs a tree that
+builds at C++20 or later (`std::span`, `std::bit_cast`; ns-3.49 builds at C++23).
+Licence headers and the include rule: `python3 -I ../.github/tools/checks/check-headers.py --dual core/ --dual tools/ --core core/ .`.
 
 ## Golden rules (invariants — do not break)
 
@@ -196,7 +211,8 @@ here is undone by the next `org_sync.py apply`).
 
 | You want to… | Go to |
 |--------------|-------|
-| Source of the primitives | AntHocNet `core/include/anthocnet/core/`, `core/src/` (MIT OR GPL-2.0-only → `core/` here) |
+| Source of the primitives | AntHocNet `core/include/anthocnet/core/`, `core/src/` (MIT OR GPL-2.0-only → `core/` here); each `core/` file names its source file and commit |
+| Use or extend a primitive | `core/swarm-*.h` (the API, documented in place), its test in `core/test/`, the list in `core/test/all-tests.cc` |
 | Wire-format discipline | AntHocNet `docs/wire-format.md`, ADR-0006 |
 | Link-metric seam history | AntHocNet #142 (closed), #145, #146 |
 | The org's invariants, labels, issue shape | [`swarm-routing/.github` CONTRIBUTING.md](https://github.com/swarm-routing/.github/blob/main/CONTRIBUTING.md) |

@@ -19,8 +19,10 @@
 The shared ns-3 contrib module `swarm-core` that every swarm-routing protocol
 links against: simulator-agnostic C++20 primitives (visited path, little-endian
 wire helpers, pheromone table, route decision, link-state and link-metric
-seams) and ns-3 cross-layer glue. **Status:** skeleton; CI runs every org
-quality gate, and the primitives and glue arrive with their epic below.
+seams) and ns-3 cross-layer glue. **Status:** the primitives are in `core/`
+(namespace `swarm::core`, `MIT OR GPL-2.0-only`, buildable and testable without
+ns-3); the ns-3 glue arrives in `model/` with its epic below. CI runs every org
+quality gate.
 
 How to work here, for people and AI agents alike: [AGENTS.md](AGENTS.md) has
 the rules and how to build and verify; the org conventions are in

@@ -6,7 +6,7 @@
 
 | Path | What | Licence |
 |------|------|---------|
-| `core/` | the simulator-free primitives (no ns-3 header; carries `core/LICENSE` once it exists) | `MIT OR GPL-2.0-only` |
+| `core/` | the simulator-free primitives and their tests (no ns-3 header; [`core/LICENSE`](core/LICENSE)); much of it derived from AntHocNet's dual-licensed `core/`, each file naming its source | `MIT OR GPL-2.0-only` |
 | `tools/` | standalone scripts (checks, release, data handling) | `MIT OR GPL-2.0-only` |
 | `model/`, `helper/`, `test/`, `examples/`, `CMakeLists.txt` | the `swarm-core` ns-3 contrib module | `GPL-2.0-only` |
 | `docs`, `README.md`, `AGENTS.md`, `CLAUDE.md` | docs | `GPL-2.0-only` |
