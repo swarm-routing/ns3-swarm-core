@@ -181,11 +181,13 @@ Code says the plugin is missing (it was called
 | Write or review a protocol's paper-fidelity sheet (`docs/fidelity.md`) | `swarm-routing/.github` `tools/fidelity/fidelity.py` | `fidelity-sheet` |
 | Check a diff against the org golden rules before a PR or a review | `swarm-routing/.github` `tools/protocol-review/check_invariants.py` | `protocol-review` |
 | Bring the README, AGENTS/CLAUDE/CONTEXT and docs/ to the org documentation standard | `swarm-routing/.github` `tools/docs-review/check_docs.py` | `docs-review` |
+| Find new papers on a topic, or confirm a reference (Crossref, Semantic Scholar, OpenAlex; free sources only) | `swarm-routing/.github` `tools/lit-search/lit_search.py` | `lit-search` |
 
 A skill only this repository uses lives in its own `.claude/skills/`; a skill
-two repositories need moves to the plugin. Skills that manage the private papers
-library (finding, citing and extracting papers) stay in `swarm-routing/papers`;
-a public skill may point to them, never carry library content. This section is managed by org-sync: add
+two repositories need moves to the plugin. Skills that file, cite and extract
+papers into the private papers library stay in `swarm-routing/papers`; finding
+new papers and confirming a reference is public (`lit-search`). A public skill
+may point to the papers skills, never carry library content. This section is managed by org-sync: add
 a row in `swarm-routing/.github` `templates/agents/skills.md`, not here (an edit
 here is undone by the next `org_sync.py apply`).
 <!-- org-sync:end skills -->
