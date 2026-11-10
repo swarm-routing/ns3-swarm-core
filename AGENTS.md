@@ -7,7 +7,7 @@ before changing anything. Org-wide conventions:
 
 ## What this repo is
 
-**Status: primitives in `core/` (#8).** CI runs every org quality gate on the module; the ns-3 glue arrives in `model/` with #9. Directories marked (planned) do not exist yet: update this file in the PR that creates each.
+**Status: primitives in `core/` (#8), ns-3 glue in `model/` and `helper/` (#9).** CI runs every org quality gate on the module. API version 2 (`kSwarmCoreApiVersion`).
 
 The shared ns-3 contrib module `swarm-core` (`libns3.<ver>-swarm-core`) every
 swarm-routing protocol links against: simulator-agnostic C++20 primitives
@@ -26,9 +26,18 @@ core/               simulator-free primitives, namespace swarm::core — MIT OR 
                     swarm-selection.{h,cc} (roulette, evaporationFactor), swarm-route-decision.h,
                     swarm-link-metric.h (ILinkMetric); CMakeLists.txt builds it alone, no ns-3
 core/test/          the core tests, one function per primitive (MIT OR GPL-2.0-only); run by ctest and by test.py
-model/              ns-3 glue — GPL-2.0-only (today: kSwarmCoreApiVersion, SwarmCoreSeed)
-helper/             (planned) ns-3 helpers
+model/              ns-3 glue — GPL-2.0-only; each file derived from AntHocNet names its source file and commit:
+                    swarm-core.h (kSwarmCoreApiVersion, SwarmCoreSeed), swarm-ns3-ports.h (SwarmClock, SwarmRng,
+                    SwarmTimerScheduler, address conversion, null ports), swarm-deferred-packet-queue.h
+                    (DeferredPacketQueue: MaxPackets 64 / MaxAge 30 s attributes, drop accounting),
+                    swarm-routing-base.h (SwarmRoutingBase: sockets, deferred route, prev-hop tag, ports, Execute),
+                    swarm-wifi-link-monitor.h (ILinkState + ILinkQuality + retry-limit LinkFailure),
+                    swarm-isl-link-monitor.h (INeighborProvider + ILinkState + LinkChange on p2p),
+                    swarm-energy-metric-hook.h (IEnergy from an EnergySource's RemainingEnergy trace)
+helper/             swarm-routing-helper.h: SwarmRoutingHelper (one-call Install, AssignStreams), SwarmMonitorHelper
 test/               swarm-core test suite: wraps every core/test/ function as a TestCase, plus the glue's
+                    (swarm-glue-tests.cc: a toy protocol on the base, a 2-3 node scenario per monitor, and
+                    same-seed byte-identical output with and without every monitor)
 examples/           swarm-core-seed: the determinism gate's program (seeded draws + a roulette sequence through IRng)
 .github/workflows/  ci.yml (reusable-ns3-ci: strict warnings, coverage, determinism, format, headers), pr-title.yml
 ```
@@ -213,6 +222,8 @@ here is undone by the next `org_sync.py apply`).
 |--------------|-------|
 | Source of the primitives | AntHocNet `core/include/anthocnet/core/`, `core/src/` (MIT OR GPL-2.0-only → `core/` here); each `core/` file names its source file and commit |
 | Use or extend a primitive | `core/swarm-*.h` (the API, documented in place), its test in `core/test/`, the list in `core/test/all-tests.cc` |
+| Write a protocol's ns-3 adapter | derive from `SwarmRoutingBase` (`model/swarm-routing-base.h`: the hooks, services and ports), install with `SwarmRoutingHelper`; the toy protocol in `test/swarm-glue-tests.cc` is a minimal example |
+| Source of the glue | AntHocNet `ns3/baselines/adaptive/model/adaptive-routing-base.*`, `ns3/anthocnet/model/anthocnet-{adapters,rqueue,routing-protocol}.*` (GPL-2.0-only → `model/` here) |
 | Wire-format discipline | AntHocNet `docs/wire-format.md`, ADR-0006 |
 | Link-metric seam history | AntHocNet #142 (closed), #145, #146 |
 | The org's invariants, labels, issue shape | [`swarm-routing/.github` CONTRIBUTING.md](https://github.com/swarm-routing/.github/blob/main/CONTRIBUTING.md) |

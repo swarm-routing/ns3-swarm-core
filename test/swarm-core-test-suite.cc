@@ -5,8 +5,10 @@
 //
 // The core/ tests (core/test/, one function per primitive) run here as one
 // TestCase each, so test.py covers them on the debug and sanitized legs; the
-// same functions run without ns-3 under core/CMakeLists.txt.
+// same functions run without ns-3 under core/CMakeLists.txt. The ns-3 glue's
+// cases (model/, helper/) come from swarm-glue-tests.cc.
 #include "../core/test/swarm-core-tests.h"
+#include "swarm-glue-tests.h"
 
 #include "ns3/swarm-core-module.h"
 #include "ns3/random-variable-stream.h"
@@ -55,7 +57,7 @@ public:
 
 private:
     void DoRun() override {
-        NS_TEST_ASSERT_MSG_EQ(kSwarmCoreApiVersion, 1u, "API version");
+        NS_TEST_ASSERT_MSG_EQ(kSwarmCoreApiVersion, 2u, "API version");
         const double a = FirstDraw(7);
         NS_TEST_ASSERT_MSG_EQ(RngSeedManager::GetSeed(), 1u, "seed is always 1");
         NS_TEST_ASSERT_MSG_EQ(RngSeedManager::GetRun(), 7u, "the run is the seed");
@@ -70,6 +72,9 @@ public:
         AddTestCase(new SwarmCoreSeedTestCase, TestCase::Duration::QUICK);
         for (const auto& t : swarm::core::test::AllTests()) {
             AddTestCase(new SwarmCorePrimitiveTestCase(t), TestCase::Duration::QUICK);
+        }
+        for (TestCase* t : swarmtest::MakeGlueTestCases()) {
+            AddTestCase(t, TestCase::Duration::QUICK);
         }
     }
 };

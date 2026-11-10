@@ -9,7 +9,9 @@ namespace ns3 {
 
 /// The swarm-core API version. Protocols built against `main` read it to
 /// detect a breaking change (golden rule 12); it moves with each one.
-constexpr uint32_t kSwarmCoreApiVersion = 1;
+/// 1: the seed helper. 2: the core/ primitives and the ns-3 glue
+/// (SwarmRoutingBase, DeferredPacketQueue, the link monitors, the helpers).
+constexpr uint32_t kSwarmCoreApiVersion = 2;
 
 /// Seeds the simulator's streams the org way: seed 1, run `seed`, so a fixed
 /// `--seed=<N>` gives byte-identical output (org invariant 5). Every
