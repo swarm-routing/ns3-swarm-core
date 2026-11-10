@@ -248,6 +248,7 @@ private:
             r2.uniformInt(4);
             NS_TEST_EXPECT_MSG_EQ((k >= 0 && k < 4), true, "uniformInt in [0, n)");
         }
+        NS_TEST_EXPECT_MSG_EQ(r1.uniformInt(0), 0, "n <= 0 never wraps");
         NullLinkState ls;
         NullLinkQuality lq;
         NullEnergy en;

@@ -37,6 +37,9 @@ double SwarmRng::uniform() {
 }
 
 int SwarmRng::uniformInt(int n) {
+    if (n <= 0) {
+        return 0;  // the port's contract is n > 0; never let n - 1 wrap to 2^32 - 1
+    }
     return static_cast<int>(m_rng->GetInteger(0, static_cast<uint32_t>(n - 1)));
 }
 

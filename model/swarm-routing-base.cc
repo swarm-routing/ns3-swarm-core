@@ -410,7 +410,7 @@ void SwarmRoutingBase::NotifyInterfaceUp(uint32_t interface) {
         s->Bind(InetSocketAddress(bind, ControlPort()));
         s->SetAllowBroadcast(true);
         s->SetIpTtl(1);
-        (bind == iface.GetLocal() ? m_sockets : m_bcastSockets)[s] = iface;
+        (bind == iface.GetLocal() ? m_sockets : m_bcastSockets).emplace_back(s, iface);
     }
 }
 
@@ -464,10 +464,12 @@ void SwarmRoutingBase::RecvSocket(Ptr<Socket> socket) {
         return;
     }
     Ipv4Address receiver;
-    if (auto it = m_sockets.find(socket); it != m_sockets.end()) {
-        receiver = it->second.GetLocal();
-    } else if (auto b = m_bcastSockets.find(socket); b != m_bcastSockets.end()) {
-        receiver = b->second.GetLocal();
+    for (const SocketList* list : {&m_sockets, &m_bcastSockets}) {
+        for (const auto& [s, iface] : *list) {
+            if (s == socket) {
+                receiver = iface.GetLocal();
+            }
+        }
     }
     RecvControl(p, sender, receiver);
 }

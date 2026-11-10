@@ -43,7 +43,8 @@
 #include "ns3/tag.h"
 #include "ns3/timer.h"
 
-#include <map>
+#include <utility>
+#include <vector>
 
 namespace ns3 {
 
@@ -213,8 +214,12 @@ private:
 
     Ptr<Ipv4> m_ipv4;
     Ptr<NetDevice> m_lo;
-    std::map<Ptr<Socket>, Ipv4InterfaceAddress> m_sockets;
-    std::map<Ptr<Socket>, Ipv4InterfaceAddress> m_bcastSockets;
+    /// Sockets in creation (interface) order: a map keyed by Ptr<Socket> would
+    /// order them by heap address, and MainAddress(), the route fallbacks and
+    /// the broadcast order would then vary between runs (org rule 5).
+    using SocketList = std::vector<std::pair<Ptr<Socket>, Ipv4InterfaceAddress>>;
+    SocketList m_sockets;
+    SocketList m_bcastSockets;
     Ptr<DeferredPacketQueue> m_queue;
     Time m_purgeInterval;
     Timer m_purgeTimer;
