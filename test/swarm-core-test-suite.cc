@@ -40,8 +40,9 @@ private:
     void DoRun() override {
         swarm::core::test::Checker c;
         m_test.run(c);
+        // Each failure prints as "got <file:line: check>, expected ''".
         for (const auto& f : c.failures()) {
-            NS_TEST_EXPECT_MSG_EQ(true, false, f);
+            NS_TEST_EXPECT_MSG_EQ(f, std::string(), "core check failed");
         }
     }
 

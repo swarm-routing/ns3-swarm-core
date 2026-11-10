@@ -51,7 +51,10 @@ public:
         ++draws_;
         return static_cast<double>(next() >> 11) * 0x1.0p-53;
     }
+    /// n <= 0 breaks the IRng contract: returns 0 without drawing, rather
+    /// than dividing by zero.
     int uniformInt(int n) override {
+        if (n <= 0) return 0;
         ++draws_;
         return static_cast<int>(next() % static_cast<std::uint64_t>(n));
     }
