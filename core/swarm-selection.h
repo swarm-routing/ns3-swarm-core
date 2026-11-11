@@ -45,6 +45,12 @@ NodeAddress rouletteSelect(std::span<const WeightedHop> candidates, IRng& rng);
 /// than nowhere.
 std::vector<WeightedHop> selectionWeights(const PheromoneTable& table, NodeAddress dest,
                                           double beta, NodeAddress exclude = kInvalidAddress);
+/// The same weights written into `out` (cleared first), so a caller that
+/// keeps `out` across calls allocates only while it grows. Returns a view of
+/// `out`.
+std::span<const WeightedHop> selectionWeights(const PheromoneTable& table, NodeAddress dest,
+                                              double beta, std::vector<WeightedHop>& out,
+                                              NodeAddress exclude = kInvalidAddress);
 
 /// selectionWeights() normalised to probabilities that sum to 1 (empty when
 /// there is no route). Read-only: it draws nothing, for inspection and tests.
@@ -55,6 +61,11 @@ std::vector<WeightedHop> selectionDistribution(const PheromoneTable& table, Node
 /// kInvalidAddress when the table holds no route (and then nothing is drawn).
 NodeAddress selectNextHop(const PheromoneTable& table, NodeAddress dest, double beta, IRng& rng,
                           NodeAddress exclude = kInvalidAddress);
+/// The same selection, the same draws, with the weights in the caller's
+/// `scratch` (overwritten): no allocation once `scratch` has grown to the
+/// widest row.
+NodeAddress selectNextHop(const PheromoneTable& table, NodeAddress dest, double beta, IRng& rng,
+                          std::vector<WeightedHop>& scratch, NodeAddress exclude = kInvalidAddress);
 
 /// The retain factor for `elapsed` seconds when a value keeps `retainPerInterval`
 /// of itself every `interval` seconds: retainPerInterval^(elapsed / interval).

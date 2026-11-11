@@ -11,7 +11,10 @@
 
 #include <cmath>
 #include <cstdint>
+#include <algorithm>
 #include <limits>
+#include <map>
+#include <utility>
 #include <vector>
 
 namespace swarm::core::test {
@@ -140,6 +143,197 @@ void TestEvaporation(Checker& c) {
     const double once = evaporationFactor(0.9, 3.0, 1.0);
     const double twice = evaporationFactor(0.9, 1.0, 1.0) * evaporationFactor(0.9, 2.0, 1.0);
     c.check(std::fabs(once - twice) < 1e-12, "time-proportional");
+}
+
+void TestPheromoneRows(Checker& c) {
+    PheromoneTable t(5);
+    t.set(9, 3, 0.5);
+    t.set(9, -2, 0.25);
+    t.set(9, 7, 0.5);
+    t.set(4, 1, 1.0);
+
+    // row(): a view in ascending neighbour order, empty for an unknown dest.
+    const auto r = t.row(9);
+    c.check(r.size() == 3 && r[0] == PheromoneTable::Entry{-2, 0.25} &&
+                r[1] == PheromoneTable::Entry{3, 0.5} && r[2] == PheromoneTable::Entry{7, 0.5},
+            "row ascending");
+    c.check(t.row(5).empty(), "no row for an unknown destination");
+    const auto e = t.entries(9);
+    c.check(std::equal(e.begin(), e.end(), r.begin(), r.end()), "entries() is a copy of row()");
+    // Updating an existing entry keeps the view valid and shows through it.
+    const auto* first = t.row(9).data();
+    c.check(t.set(9, 3, 0.75) && t.add(9, 7, 0.125) && t.row(9).data() == first &&
+                t.row(9)[1].value == 0.75 && t.row(9)[2].value == 0.625,
+            "set/add on an entry keep the row in place");
+
+    // forEach(): the same entries, the same order.
+    std::vector<PheromoneTable::Entry> seen;
+    t.forEach(9, [&seen](const PheromoneTable::Entry& x) { seen.push_back(x); });
+    c.check(seen == t.entries(9), "forEach visits the row in order");
+    int calls = 0;
+    t.forEach(5, [&calls](const PheromoneTable::Entry&) { ++calls; });
+    c.check(calls == 0, "forEach on an unknown destination calls nothing");
+
+    // best / bestEntry in place, with and without an excluded neighbour.
+    c.check(t.best(9) == 0.75 && t.best(9, 3) == 0.625 && t.best(9, 99) == 0.75,
+            "best with an exclude");
+    c.check(t.bestEntry(9) == PheromoneTable::Entry{3, 0.75}, "bestEntry");
+    c.check(t.bestEntry(9, 3) == PheromoneTable::Entry{7, 0.625}, "bestEntry excluding the best");
+    t.set(9, 7, 0.75);
+    c.check(t.bestEntry(9).neighbor == 3, "a tie goes to the lowest neighbour");
+    c.check(t.bestEntry(5) == PheromoneTable::Entry{} && t.bestEntry(5).neighbor == kInvalidAddress,
+            "no row: no best");
+    c.check(t.bestEntry(4, 1).neighbor == kInvalidAddress && t.best(4, 1) == 0.0,
+            "only the excluded neighbour: no best");
+    PheromoneTable z(4);
+    z.set(1, 1, 0.0);
+    z.set(1, 2, -1.0);
+    c.check(z.bestEntry(1).neighbor == kInvalidAddress && z.best(1) == 0.0,
+            "no positive value: no best");
+
+    // add(): one lookup, the same results as get() + set().
+    c.check(t.add(4, 2, 0.5) && t.full() && t.get(4, 2) == 0.5, "add creates up to the cap");
+    c.check(!t.add(4, 3, 0.5) && !t.contains(4, 3), "add of a new entry past the cap is refused");
+    c.check(!t.add(8, 1, 0.5) && t.row(8).empty(), "a new row past the cap is refused");
+    c.check(t.add(4, 2, 0.25) && t.get(4, 2) == 0.75, "add to an entry at the cap works");
+    c.check(!t.add(4, 2, std::numeric_limits<double>::infinity()) && t.get(4, 2) == 0.75,
+            "add refuses a non-finite result and keeps the value");
+    PheromoneTable s(2);
+    c.check(s.add(1, 1, -0.0) && !std::signbit(s.get(1, 1)),
+            "a new entry is 0.0 + delta, as get() + delta was");
+    c.check(!s.add(1, 2, std::nan("")) && !s.contains(1, 2), "add refuses NaN for a new entry");
+
+    // Removing the last entry of a row removes the row.
+    PheromoneTable d(4);
+    d.set(1, 1, 1.0);
+    d.set(2, 1, 1.0);
+    d.set(2, 2, 1.0);
+    c.check(d.erase(1, 1) && d.destinations() == std::vector<NodeAddress>{2} && d.size() == 2,
+            "erase drops an emptied row");
+    c.check(d.eraseNeighbor(1) == 1 && d.row(2).size() == 1 && d.size() == 1, "eraseNeighbor");
+    c.check(d.eraseDestination(2) == 1 && d.empty() && d.destinations().empty(),
+            "eraseDestination");
+}
+
+void TestOnePassEvaporation(Checker& c) {
+    PheromoneTable t(8);
+    t.set(1, 1, 0.5);   // * 0.5 = 0.25: exactly the floor, stays
+    t.set(1, 2, 0.4);   // 0.2: below, goes
+    t.set(1, 3, 1.0);   // 0.5: stays
+    t.set(2, 5, 0.25);  // 0.125: goes, and its row with it
+    t.set(3, 1, 0.3);   // 0.15: goes
+    t.set(3, 4, 0.75);  // 0.375: stays
+    c.check(t.evaporate(0.5, 0.25) == 3, "three entries fall below the floor");
+    c.check(t.size() == 3 && !t.full(), "size follows, the freed room is free");
+    c.check(t.get(1, 1) == 0.25 && t.contains(1, 1), "an entry at exactly the floor stays");
+    c.check(!t.contains(1, 2) && !t.contains(3, 1), "entries below the floor go");
+    c.check(t.destinations() == std::vector<NodeAddress>{1, 3}, "an emptied row goes");
+    c.check(t.row(1).size() == 2 && t.row(1)[0].neighbor == 1 && t.row(1)[1].neighbor == 3 &&
+                t.row(3).size() == 1 && t.row(3)[0] == PheromoneTable::Entry{4, 0.375},
+            "the survivors keep their order and their aged values");
+    c.check(t.evaporate(0.5, std::nan("")) == 0 && t.size() == 3 && t.get(1, 3) == 0.25,
+            "a NaN floor ages and removes nothing");
+    c.check(t.evaporate(1.0, 1.0) == 3 && t.empty() && t.destinations().empty(),
+            "a floor above every value empties the table");
+}
+
+namespace {
+
+/// The table as it was stored before #45: a std::map on (destination,
+/// neighbour), with the same operations written the old way. The flat rows
+/// must agree with it after every operation.
+class MapModel {
+public:
+    explicit MapModel(std::size_t capacity) : capacity_(capacity) {}
+    bool set(NodeAddress d, NodeAddress n, double v) {
+        if (!std::isfinite(v)) return false;
+        auto it = m_.find({d, n});
+        if (it != m_.end()) {
+            it->second = v;
+            return true;
+        }
+        if (m_.size() >= capacity_) return false;
+        m_.emplace(std::make_pair(d, n), v);
+        return true;
+    }
+    bool add(NodeAddress d, NodeAddress n, double delta) { return set(d, n, get(d, n) + delta); }
+    double get(NodeAddress d, NodeAddress n) const {
+        auto it = m_.find({d, n});
+        return it != m_.end() ? it->second : 0.0;
+    }
+    bool erase(NodeAddress d, NodeAddress n) { return m_.erase({d, n}) > 0; }
+    std::size_t eraseNeighbor(NodeAddress n) {
+        return std::erase_if(m_, [n](const auto& kv) { return kv.first.second == n; });
+    }
+    std::size_t eraseDestination(NodeAddress d) {
+        return std::erase_if(m_, [d](const auto& kv) { return kv.first.first == d; });
+    }
+    std::size_t evaporate(double retain, double floor) {
+        if (!(retain >= 0.0 && retain <= 1.0)) return 0;
+        for (auto& kv : m_)
+            kv.second *= retain;
+        return std::erase_if(m_, [floor](const auto& kv) { return kv.second < floor; });
+    }
+    std::vector<std::pair<std::pair<NodeAddress, NodeAddress>, double>> all() const {
+        return {m_.begin(), m_.end()};
+    }
+
+private:
+    std::size_t capacity_;
+    std::map<std::pair<NodeAddress, NodeAddress>, double> m_;
+};
+
+std::vector<std::pair<std::pair<NodeAddress, NodeAddress>, double>>
+flatten(const PheromoneTable& t) {
+    std::vector<std::pair<std::pair<NodeAddress, NodeAddress>, double>> out;
+    for (NodeAddress d : t.destinations()) {
+        for (const auto& e : t.row(d))
+            out.push_back({{d, e.neighbor}, e.value});
+    }
+    return out;
+}
+
+}  // namespace
+
+void TestPheromoneTableModel(Checker& c) {
+    // A seeded random sequence of every mutating operation, on a small
+    // address space so rows fill, empty and refill: the flat rows hold the
+    // same entries, in the same order, with bit-identical values, and return
+    // the same results as the std::map storage they replace (class A, #45).
+    SeededRng rng(45);
+    PheromoneTable t(24);
+    MapModel m(24);
+    bool same = true;
+    for (int i = 0; i < 20000 && same; ++i) {
+        const NodeAddress d = rng.uniformInt(9) - 2;
+        const NodeAddress n = rng.uniformInt(9) - 2;
+        const double v = rng.uniform() * 2.0 - 0.25;
+        switch (rng.uniformInt(8)) {
+        case 0:
+        case 1:
+            same = t.set(d, n, v) == m.set(d, n, v);
+            break;
+        case 2:
+        case 3:
+            same = t.add(d, n, v) == m.add(d, n, v);
+            break;
+        case 4:
+            same = t.erase(d, n) == m.erase(d, n);
+            break;
+        case 5:
+            same = rng.uniformInt(4) == 0 ? t.eraseNeighbor(n) == m.eraseNeighbor(n)
+                                          : t.eraseDestination(d) == m.eraseDestination(d);
+            break;
+        default: {
+            const double retain = rng.uniform();
+            const double floor = rng.uniform() * 0.1;
+            same = t.evaporate(retain, floor) == m.evaporate(retain, floor);
+        }
+        }
+        same = same && flatten(t) == m.all() && t.size() == m.all().size() &&
+               t.get(d, n) == m.get(d, n);
+    }
+    c.check(same, "flat rows match the std::map storage, operation by operation");
 }
 
 }  // namespace swarm::core::test
