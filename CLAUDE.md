@@ -4,7 +4,7 @@
 build/verify, where-to-look), imported below so it survives context
 compaction. Org-wide conventions (invariants, issue and label taxonomy) live in
 [`swarm-routing/.github` CONTRIBUTING.md](https://github.com/swarm-routing/.github/blob/main/CONTRIBUTING.md). This file mirrors
-[AntHocNet's CLAUDE.md](https://github.com/danieljoppi/AntHocNet/blob/main/CLAUDE.md), the source repository the
+[AntHocNet's CLAUDE.md](https://github.com/swarm-routing/AntHocNet/blob/main/CLAUDE.md), the source repository the
 org grew out of; the guidelines further down are general behavioural defaults
 layered on top.
 
