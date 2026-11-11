@@ -121,7 +121,10 @@ Org-wide (1–9), then this repo's own.
    outside contributor may add their own `Copyright (c) <year> <Name>` line
    beneath the org line, never replace it, and signs off every commit (DCO,
    CONTRIBUTING "Outside contributions"). CI (`reusable-licence-check.yml`)
-   checks it. A new directory gets its row in `LICENSING.md` in the same PR.
+   checks the SPDX line, and the org line's place when a header names more
+   than one holder; a header with a single, other holder (a replaced org line,
+   or third-party code) passes it, so review catches that. A new directory
+   gets its row in `LICENSING.md` in the same PR.
 2. **The licence boundary only goes one way.** GPL code may use the dual
    parts; dual code never pulls GPL-only code in: a `core/` file includes only
    the C++ standard library, other `core/` files and the dual-licensed `core/`
@@ -178,8 +181,12 @@ Org-wide (1–9), then this repo's own.
   umbrellas), area label(s) (`protocol`/`adapter`/`ns3`/`benchmark`/
   `observability`/`packaging`/`learn-site`/`literature`), one `model:*`
   recommendation, one `priority:P1|P2|P3` on non-epic issues, a
-  `release:vX.Y.Z` label only when a roadmap gates the issue. Labels come from
-  `labels.json` via the `sync-labels` workflow.
+  `release:vX.Y.Z` label only when a release in the repository's ladder
+  (`docs/roadmap.md`; until it lands, the org ROADMAP's release train)
+  gates the issue: that label set is the version's scope,
+  and the version is released when its issues are done (CONTRIBUTING
+  "Cutting a release"). Labels come from `labels.json` via the `sync-labels`
+  workflow.
 - Issue bodies: **Context** (evidence, numbers, links) · **Scope** ·
   **Acceptance criteria** (checkboxes) · **Depends on** (cross-repo form
   `swarm-routing/<repo>#N`) · **References**. Children of an epic say "Part of
@@ -226,8 +233,11 @@ Org-wide (1–9), then this repo's own.
   merges (CONTRIBUTING "Cutting a release").
 - When a PR falls behind `main`, update it
   (`gh api -X PUT "repos/<owner>/<repo>/pulls/<n>/update-branch"`, with
-  `<owner>/<repo>` the PR's base repository and `<n>` its number) and merge PRs one at a time, each after its CI on the updated branch. Never force-push a
-  branch someone else pushed. A behind `bot/release` PR is the exception:
+  `<owner>/<repo>` the PR's base repository and `<n>` its number) and merge PRs one at a time, each after its CI on the updated branch. A
+  repository with a merge queue (`merge_queue = true` in its `[settings]`)
+  is not updated by hand: enable auto-merge and the queue tests each PR on
+  the latest `main` and merges it (CONTRIBUTING "Merge when CI is green").
+  Never force-push a branch someone else pushed. A behind `bot/release` PR is the exception:
   dispatch the release `bump` again, so the version and changelog are rebuilt
   on the new `main`.
 - **Settings are code.** Repository settings, rulesets, required checks and the
