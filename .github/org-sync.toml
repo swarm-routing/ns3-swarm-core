@@ -72,3 +72,27 @@ merge_queue = true
 # required reviewer and wait timer, so release.yml's publish job no longer waits for an
 # approval. `true` turns the gate back on (swarm-routing/.github CONTRIBUTING "Automation").
 release_environment = false
+
+# The work this repository implements or builds on: the README's Releases &
+# citing list and CITATION.cff's references (swarm-routing/.github org-sync,
+# #228). Every DOI confirmed with lit_search.py confirm; fields from Crossref.
+
+[[references]]
+type = "software"
+title = "AntHocNet for NS-3"
+authors = ["Joppi, Daniel Henrique"]
+year = 2026
+publisher = "Zenodo"
+doi = "10.5281/zenodo.20981979"
+role = "The source of the primitives in core/ and the ns-3 glue in model/: each file names its AntHocNet source and commit."
+
+[[references]]
+type = "conference-paper"
+title = "AntHocNet: An Ant-Based Hybrid Routing Algorithm for Mobile Ad Hoc Networks"
+authors = ["Di Caro, Gianni", "Ducatelle, Frederick", "Gambardella, Luca Maria"]
+year = 2004
+venue = "Parallel Problem Solving from Nature - PPSN VIII"
+pages = "461-470"
+publisher = "Springer Berlin Heidelberg"
+doi = "10.1007/978-3-540-30217-9_47"
+role = "The algorithm the shared primitives were first written for."
