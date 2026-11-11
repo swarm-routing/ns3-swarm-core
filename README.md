@@ -31,7 +31,7 @@ which installs a protocol and its monitors in one call. CI runs every org
 quality gate.
 
 How to work here, for people and AI agents alike: [AGENTS.md](AGENTS.md) has
-the rules and how to build and verify; the org conventions are in
+the rules and how to build and verify; the release plan is [docs/roadmap.md](docs/roadmap.md); the org conventions are in
 [CONTRIBUTING.md](https://github.com/swarm-routing/.github/blob/main/CONTRIBUTING.md).
 
 ## Epics
