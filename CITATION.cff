@@ -1,5 +1,6 @@
 # Citation File Format (https://citation-file-format.github.io), seeded by
-# swarm-routing/.github org-sync (`citation = true`); the repository's own once
+# swarm-routing/.github org-sync (`citation = true`; `citation_type` and
+# `[[references]]` in .github/org-sync.toml); the repository's own once
 # written. Commitizen keeps `version:` in step (`.cz.toml` version_files
 # "CITATION.cff:^version:"); swarm-routing/.github tools/zenodo reads the
 # concept DOI from `doi:` once the first release is archived on Zenodo.
@@ -26,3 +27,32 @@ identifiers:
   - type: doi
     value: "10.5281/zenodo.24138628"
     description: "Concept DOI: always resolves to the latest released version."
+references:
+  - type: software
+    title: "AntHocNet for NS-3"
+    authors:
+      - family-names: "Joppi"
+        given-names: "Daniel Henrique"
+    year: 2026
+    publisher:
+      name: "Zenodo"
+    doi: "10.5281/zenodo.20981979"
+    notes: "The source of the primitives in core/ and the ns-3 glue in model/: each file names its AntHocNet source and commit."
+  - type: conference-paper
+    title: "AntHocNet: An Ant-Based Hybrid Routing Algorithm for Mobile Ad Hoc Networks"
+    authors:
+      - family-names: "Di Caro"
+        given-names: "Gianni"
+      - family-names: "Ducatelle"
+        given-names: "Frederick"
+      - family-names: "Gambardella"
+        given-names: "Luca Maria"
+    collection-title: "Parallel Problem Solving from Nature - PPSN VIII"
+    collection-type: proceedings
+    start: "461"
+    end: "470"
+    year: 2004
+    publisher:
+      name: "Springer Berlin Heidelberg"
+    doi: "10.1007/978-3-540-30217-9_47"
+    notes: "The algorithm the shared primitives were first written for."
