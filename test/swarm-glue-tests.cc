@@ -568,6 +568,14 @@ private:
                               "an unnamed kind prints its number");
         NS_TEST_EXPECT_MSG_EQ(SwarmRoutingBase::GetKindName(SwarmRoutingBase::GetTypeId(), kHello),
                               std::string("1"), "names belong to their protocol");
+        // A parent's names reach its children; a null name is skipped.
+        const std::array<swarm::core::KindName, 2> baseKinds{{{7, "BASE"}, {8, nullptr}}};
+        SwarmRoutingBase::SetKindNames(SwarmRoutingBase::GetTypeId(), baseKinds);
+        NS_TEST_EXPECT_MSG_EQ(Toy(n0)->KindName(7), std::string("BASE"), "inherited name");
+        NS_TEST_EXPECT_MSG_EQ(Toy(n0)->KindName(8), std::string("8"), "null name skipped");
+        NS_TEST_EXPECT_MSG_EQ(Toy(n0)->KindName(kHello), std::string("HELLO"), "own name first");
+        SwarmRoutingBase::SetKindNames(SwarmRoutingBase::GetTypeId(), {});
+        NS_TEST_EXPECT_MSG_EQ(Toy(n0)->KindName(7), std::string("7"), "names replaced");
 
         Toy(n0)->ResetRouterStats();
         NS_TEST_EXPECT_MSG_EQ(Toy(n0)->GetRouterStats().control.empty(), true, "reset");

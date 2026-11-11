@@ -216,6 +216,13 @@ void TestObserverCounters(Checker& c) {
     c.check(z.control.empty() && z.routeAdds == 0 && z.peakStateEntries == 0,
             "reset zeroes the counters");
     c.check(z.observedFor == 2.0 && z.meanStateEntries == 0.0, "reset restarts the window");
+
+    // An empty window: the mean is the footprint itself.
+    counting.reset();
+    counting.onStateSize(3, 24);
+    const RouterStats e = counting.stats();
+    c.check(e.observedFor == 0.0 && e.meanStateEntries == 3.0 && e.meanStateBytes == 24.0,
+            "empty window: mean is the footprint");
 }
 
 void TestObserverNonIntrusive(Checker& c) {
