@@ -4,7 +4,7 @@
 build/verify, where-to-look), imported below so it survives context
 compaction. Org-wide conventions (invariants, issue and label taxonomy) live in
 [`swarm-routing/.github` CONTRIBUTING.md](https://github.com/swarm-routing/.github/blob/main/CONTRIBUTING.md). This file mirrors
-[AntHocNet's CLAUDE.md](https://github.com/danieljoppi/AntHocNet/blob/main/CLAUDE.md), the source repository the
+[AntHocNet's CLAUDE.md](https://github.com/swarm-routing/AntHocNet/blob/main/CLAUDE.md), the source repository the
 org grew out of; the guidelines further down are general behavioural defaults
 layered on top.
 
@@ -15,7 +15,7 @@ layered on top.
 handoff is asked for, open a GitHub issue from the *Handoff* template (label
 `handoff`). Never write a handoff file in the repo. Start a new session from
 the newest open `handoff` issue, and close it when the work it hands off is
-done ([AntHocNet ADR-0013](https://github.com/danieljoppi/AntHocNet/blob/main/docs/adr/0013-track-bugs-and-findings-as-issues.md) item 5).
+done ([AntHocNet ADR-0013](https://github.com/swarm-routing/AntHocNet/blob/main/docs/adr/0013-track-bugs-and-findings-as-issues.md) item 5).
 
 **Every change is a PR to `main`, squash-merged.** Open the PR as soon as the
 branch is pushed, so all work is tracked; the squash title is the commit on
