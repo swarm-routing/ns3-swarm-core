@@ -28,7 +28,8 @@ this plan is a live query rather than a diagram that drifts:
 
 The labels are applied right after the `release:` labels land in the org
 taxonomy, so a board can be empty or incomplete until then: read this page's
-exit-criteria table for the gates in the meantime.
+exit-criteria table for the gates in the meantime. The `release:v0.1.0` board
+is empty: v0.1.0 has shipped and no open issue carries its label.
 
 Only issues the ladder actually gates are labelled, one release label per
 issue. Everything else is unscheduled work that lands whenever it lands.
@@ -38,22 +39,25 @@ Majors are reserved for breaking changes; 1.0.0 is the stability promise.
 
 ```mermaid
 flowchart LR
-    V01["<b>v0.1.0</b><br/>the shared<br/>module"]
+    V01["<b>v0.1.0</b><br/>the shared<br/>module<br/>shipped 2026-11-11"]
     V02["<b>v0.2.0</b><br/>adapter<br/>complete"]
     V03["<b>v0.3.0</b><br/>metrics and<br/>testbench"]
     V10["<b>v1.0.0</b><br/>API frozen"]
 
     V01 --> V02 --> V03 --> V10
 
-    style V01 fill:#fff8e6,stroke:#c48f00,stroke-width:2px
+    style V01 fill:#e2f0ed,stroke:#0f7f70,stroke-width:2px
     style V02 fill:#fff8e6,stroke:#c48f00
     style V03 fill:#fff8e6,stroke:#c48f00
     style V10 fill:#e8e6f8,stroke:#5b4fc4,stroke-width:2px
 ```
 
-Amber releases are planned and not yet shipped; nothing has shipped yet (no
-GitHub release exists as of 2026-11-11). v0.1.0 is the next one and waits only
-on [#38](https://github.com/swarm-routing/ns3-swarm-core/issues/38).
+Teal releases have shipped; amber releases are planned and not yet shipped.
+**v0.1.0 shipped on 2026-11-11**
+([release](https://github.com/swarm-routing/ns3-swarm-core/releases/tag/v0.1.0),
+Zenodo version DOI
+[10.5281/zenodo.24138629](https://doi.org/10.5281/zenodo.24138629)). v0.2.0
+is the next one.
 
 ## What blocks what
 
@@ -63,7 +67,6 @@ Cross-repository issues are written `swarm-routing/<repo>#N`.
 ```mermaid
 flowchart TB
     subgraph SC["ns3-swarm-core"]
-        I38["#38 release through<br/>reusable-release.yml"]
         I40["#40 hold a packet with<br/>its header (P1)"]
         I33["#33 DedupHistory<br/>entry lifetime"]
         I43["#43 node lifecycle"]
@@ -78,8 +81,7 @@ flowchart TB
     HOP["HOPNET v0.2.0"]
     AHN["AntHocNet v2.7.0"]
 
-    I38 --> V01["swarm-core v0.1.0"]
-    V01 --> V02["swarm-core v0.2.0"]
+    V01["swarm-core v0.1.0<br/>shipped"] --> V02["swarm-core v0.2.0"]
     I40 & I33 & I43 & I46 --> V02
     V02 --> V03["swarm-core v0.3.0"]
     MET --> V03
@@ -91,7 +93,7 @@ flowchart TB
     V01 -.-> TER & HOP
     V01 -.-> AHN
 
-    style V01 fill:#fff8e6,stroke:#c48f00,stroke-width:2px
+    style V01 fill:#e2f0ed,stroke:#0f7f70,stroke-width:2px
     style V10 fill:#e8e6f8,stroke:#5b4fc4,stroke-width:2px
 ```
 
@@ -107,8 +109,8 @@ maintainer on 2026-11-11. The org ROADMAP is being updated to carry it (it
 replaces the phase-targets table); until that lands, this section is the
 record of swarm-core's part:
 
-- **A (now):** ns3-swarm-core v0.1.0 (#38), ns3-tools v0.1.0 (after the
-  tag-push fix swarm-routing/ns3-tools#105), AntHocNet v2.7.0.
+- **A (now):** ns3-swarm-core v0.1.0 (shipped 2026-11-11), ns3-tools v0.1.0
+  (shipped 2026-11-11), AntHocNet v2.7.0.
 - **B:** ns3-swarm-core v0.2.0 with ns3-tools v0.2.0, then ARA v0.2.0 and
   BeeAdHoc v0.2.0 (the first gated protocol releases).
 - **C, D:** Termite v0.2.0, then HOPNET v0.2.0, on swarm-core v0.2.0.
@@ -121,22 +123,22 @@ record of swarm-core's part:
 
 | Release | Exit criteria |
 |---|---|
-| **v0.1.0** "the shared module" | The module released through the org `reusable-release.yml`: `make dist` builds and checks the module tarball ([#38](https://github.com/swarm-routing/ns3-swarm-core/issues/38)). Epic [#6](https://github.com/swarm-routing/ns3-swarm-core/issues/6)'s third criterion is met (ARA and BeeAdHoc `ns3/` green against `main`, swarm-routing/ARA#40, swarm-routing/BeeAdHoc#48). |
+| **v0.1.0** "the shared module" (shipped 2026-11-11) | The module released through the org `reusable-release.yml`: `make dist` builds and checks the module tarball ([#38](https://github.com/swarm-routing/ns3-swarm-core/issues/38)). Epic [#6](https://github.com/swarm-routing/ns3-swarm-core/issues/6)'s third criterion is met (ARA and BeeAdHoc `ns3/` green against `main`, swarm-routing/ARA#40, swarm-routing/BeeAdHoc#48). |
 | **v0.2.0** "adapter complete" | `SwarmRoutingBase` carries what the first gated protocols need: hold a packet with its protocol header and send one back to the previous hop ([#40](https://github.com/swarm-routing/ns3-swarm-core/issues/40), P1; ARA backtracking, Termite discovery); an optional entry lifetime on `DedupHistory` ([#33](https://github.com/swarm-routing/ns3-swarm-core/issues/33)); node shutdown, crash and restart with a helper that scripts failures identically for every arm ([#43](https://github.com/swarm-routing/ns3-swarm-core/issues/43)); the deferred queue and wire path without O(n²) rebuilds or per-packet allocation ([#46](https://github.com/swarm-routing/ns3-swarm-core/issues/46)). **Exit:** every change is additive, default output is byte-identical (same seed, same bytes), and every consumer (ARA, BeeAdHoc, the toy protocol in `test/`) is green. |
 | **v0.3.0** "metrics and testbench" | The metric seams and the testbench: energy-aware `ILinkMetric` ([#2](https://github.com/swarm-routing/ns3-swarm-core/issues/2)), fuzzy composite `ILinkMetric` ([#3](https://github.com/swarm-routing/ns3-swarm-core/issues/3)), ISL neighbour discovery without hello ([#4](https://github.com/swarm-routing/ns3-swarm-core/issues/4)), and a shared discrete-event testbench for protocol cores ([#15](https://github.com/swarm-routing/ns3-swarm-core/issues/15)). |
 | **v1.0.0** "API frozen" | `kSwarmCoreApiVersion` frozen with a written deprecation policy; ARA and BeeAdHoc gated releases built on it with no API change; whether AntHocNet consumes swarm-core at switch-over decided ([#14](https://github.com/swarm-routing/ns3-swarm-core/issues/14)). |
 
-Issue state at the time of writing (2026-11-11): #38, #40, #33, #43, #46, #2,
-#3, #4, #15 and #14 are all open, and their titles match the entries above.
-Epic #6 is still open although its acceptance criteria are all met; closing it
-is a maintainer step.
+Issue state at the time of writing (2026-11-11): #38 is closed and v0.1.0 has
+shipped; #40, #33, #43, #46, #2, #3, #4, #15 and #14 are all open, and their
+titles match the entries above. Epic #6 is closed as completed.
 
 ## Infrastructure track
 
 CI, packaging and tooling work rides along with the ladder under the same
 `release:` labels where it has a natural home. It never changes behaviour, so
-it never gates a release's exit criteria. The one item that gates a release is
-[#38](https://github.com/swarm-routing/ns3-swarm-core/issues/38) (v0.1.0). ns-3
+it never gates a release's exit criteria. The one item that gated a release,
+[#38](https://github.com/swarm-routing/ns3-swarm-core/issues/38) (v0.1.0), is
+closed and that release has shipped. ns-3
 version drift is not tracked here: CI follows the release ns-3 supports with no
 edit (org CONTRIBUTING invariant 7).
 
