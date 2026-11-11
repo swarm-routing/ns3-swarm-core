@@ -286,6 +286,7 @@ here is undone by the next `org_sync.py apply`).
 | Use or extend a primitive | `core/swarm-*.h` (the API, documented in place), its test in `core/test/`, the list in `core/test/all-tests.cc` |
 | Report a protocol's internals (control by kind, route changes, data decisions, state footprint) | its core calls `swarm::core::IRouterObserver` (`core/swarm-observer.h`), the adapter passes `&Observer()` and registers its `KindName` table; read with the trace sources or `SwarmRoutingHelper::CollectStats` (#42; consumer: swarm-routing/ns3-tools#91) |
 | Write a protocol's ns-3 adapter | derive from `SwarmRoutingBase` (`model/swarm-routing-base.h`: the hooks, services and ports), install with `SwarmRoutingHelper`; the toy protocol in `test/swarm-glue-tests.cc` is a minimal example |
+| Merge a change to `core/` | every protocol repository that pins swarm-core (ARA, BeeAdHoc, Termite, HOPNET) goes red on its `swarm-core / pin` check as soon as it lands, and its open PRs are blocked: open the pin-bump PR in each (`SWARM_CORE_REF` in `core/CMakeLists.txt`, the `Makefile`, every workflow's `core-deps`; the failing check names each place), verified with its core tests, until org-bot opens them (swarm-routing/.github#190, #208) |
 | Source of the glue | AntHocNet `ns3/baselines/adaptive/model/adaptive-routing-base.*`, `ns3/anthocnet/model/anthocnet-{adapters,rqueue,routing-protocol}.*` (GPL-2.0-only → `model/` here) |
 | Wire-format discipline | AntHocNet `docs/wire-format.md`, ADR-0006 |
 | Link-metric seam history | AntHocNet #142 (closed), #145, #146 |
