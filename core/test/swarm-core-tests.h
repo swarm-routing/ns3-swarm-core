@@ -25,6 +25,9 @@ void TestRoulette(Checker& c);
 void TestSelectionDeterminism(Checker& c);
 void TestRouteDecision(Checker& c);
 void TestPortsAndMetric(Checker& c);
+void TestObserverCallbacks(Checker& c);
+void TestObserverCounters(Checker& c);
+void TestObserverNonIntrusive(Checker& c);
 
 /// One named test, for the runners.
 struct NamedTest {

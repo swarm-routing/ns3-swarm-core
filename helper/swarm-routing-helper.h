@@ -11,14 +11,21 @@
 //   ara.Install(nodes);           // IPv4 stack + the protocol + every monitor that applies
 //   ...assign addresses...
 //   ara.AssignStreams(nodes, 0);  // before Simulator::Run
+//   ...Simulator::Run...
+//   SwarmRoutingStats stats = SwarmRoutingHelper::CollectStats(nodes);  // the observer's counters
 #ifndef SWARM_ROUTING_HELPER_H
 #define SWARM_ROUTING_HELPER_H
 
 #include "ns3/ipv4-routing-helper.h"
 #include "ns3/node-container.h"
 #include "ns3/object-factory.h"
+#include "ns3/swarm-observer.h"
 
+#include <cstdint>
+#include <span>
 #include <string>
+#include <utility>
+#include <vector>
 
 namespace ns3 {
 
@@ -32,6 +39,15 @@ public:
     /// Returns the number of monitors installed.
     uint32_t Install(Ptr<Node> node) const;
     uint32_t Install(const NodeContainer& nodes) const;
+};
+
+/// The router observer's counters (core/swarm-observer.h) of a set of nodes.
+struct SwarmRoutingStats {
+    /// (node id, its counters), in the container's order; nodes without a
+    /// SwarmRoutingBase protocol are left out.
+    std::vector<std::pair<uint32_t, swarm::core::RouterStats>> perNode;
+    /// Every node's counters merged (RouterStats::merge: footprints sum).
+    swarm::core::RouterStats aggregate;
 };
 
 /// An Ipv4RoutingHelper for any protocol derived from SwarmRoutingBase, named
@@ -55,6 +71,16 @@ public:
     /// Pins the randomness of the protocol on every node, from `stream`
     /// upwards; returns the number of streams used.
     int64_t AssignStreams(const NodeContainer& nodes, int64_t stream) const;
+
+    /// Names this protocol's control kinds for readers (its static KindName
+    /// table; SwarmRoutingBase::SetKindNames on the helper's TypeId).
+    void SetKindNames(std::span<const swarm::core::KindName> names) const;
+    /// The name of `kind` for this protocol, else the number in decimal.
+    std::string KindName(uint8_t kind) const;
+
+    /// The router observer's per-node and aggregate counters, time averages
+    /// taken up to now (call it after Simulator::Run, before Destroy).
+    static SwarmRoutingStats CollectStats(const NodeContainer& nodes);
 
 private:
     ObjectFactory m_factory;

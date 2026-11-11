@@ -4,8 +4,9 @@
 // The ports a simulator adapter implements. Derived from
 // swarm-routing/AntHocNet core/include/anthocnet/core/ports.h @ 78c4640
 // (MIT OR GPL-2.0-only): IClock, IRng, INeighborProvider, ITimerScheduler,
-// ILinkState, ILinkQuality and IEnergy as there. AntHocNet's IKinematics and
-// IRouterObserver stay behind: only AntHocNet uses them (golden rule 11).
+// ILinkState, ILinkQuality and IEnergy as there. AntHocNet's IKinematics
+// stays behind: only AntHocNet uses it (golden rule 11). Its IRouterObserver,
+// widened for every protocol, is in swarm-observer.h (#42).
 //
 // A protocol's core depends only on these interfaces, never on a simulator
 // (golden rule 10): time, randomness, neighbours and deferred work all come in
