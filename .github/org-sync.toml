@@ -66,5 +66,7 @@ required_checks = ["ci / ns-latest debug", "ci / ns-latest sanitized", "ci / for
 # Merge through a merge queue (swarm-routing/.github#130); every workflow behind a required
 # check also runs on merge_group.
 merge_queue = true
-# The publish job of release.yml waits for the maintainer (CONTRIBUTING "Cutting a release").
-release_environment = true
+# Off for now (maintainer decision 2026-11-11): `false` strips the `release` environment's
+# required reviewer and wait timer, so release.yml's publish job no longer waits for an
+# approval. `true` turns the gate back on (swarm-routing/.github CONTRIBUTING "Automation").
+release_environment = false
