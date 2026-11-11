@@ -140,6 +140,17 @@ it never gates a release's exit criteria. The one item that gates a release is
 version drift is not tracked here: CI follows the release ns-3 supports with no
 edit (org CONTRIBUTING invariant 7).
 
+## After 1.0
+
+The org's themed lines after the 1.0.0 releases (1.1 comparators, 1.2 network
+families, 2.0 security, later more swarm protocols and other simulators) are
+listed in the [org ROADMAP](https://github.com/swarm-routing/.github/blob/main/ROADMAP.md)'s
+*After 1.0* section. **None of them gates any release of this repository before
+1.0**, and none has an issue here today: the arms and substrates live in
+`swarm-routing/ns3-tools` and in each protocol repository. A primitive one of
+them needs moves here only when a second protocol needs it too (rule 11), as an
+additive minor release.
+
 ## Deliberate non-goals
 
 - **No protocol logic.** swarm-core holds what two or more protocols share
