@@ -22,10 +22,13 @@ CMakeLists.txt      build_lib(LIBNAME swarm-core ...); ns-3 generates ns3/swarm-
 core/               simulator-free primitives, namespace swarm::core — MIT OR GPL-2.0-only, carries core/LICENSE:
                     swarm-types.h, swarm-ports.h (IClock, IRng, INeighborProvider, ITimerScheduler,
                     ILinkState, ILinkQuality, IEnergy), swarm-wire.h (LE WireWriter/WireReader, version byte),
-                    swarm-visited-path.h, swarm-dedup-history.{h,cc}, swarm-pheromone-table.{h,cc},
+                    swarm-visited-path.h, swarm-dedup-history.{h,cc}, swarm-pheromone-table.{h,cc} (flat
+                    per-destination rows: row() views, forEach, bestEntry; #45),
                     swarm-selection.{h,cc} (roulette, evaporationFactor), swarm-route-decision.h,
                     swarm-link-metric.h (ILinkMetric); CMakeLists.txt builds it alone, no ns-3
 core/test/          the core tests, one function per primitive (MIT OR GPL-2.0-only); run by ctest and by test.py
+core/bench/         dev-only microbenchmarks (MIT OR GPL-2.0-only; Google Benchmark, pinned, -DSWARM_CORE_BENCH=ON;
+                    exempt from the core-include check, as it includes <benchmark/benchmark.h>)
 model/              ns-3 glue — GPL-2.0-only; each file derived from AntHocNet names its source file and commit:
                     swarm-core.h (kSwarmCoreApiVersion, SwarmCoreSeed), swarm-ns3-ports.h (SwarmClock, SwarmRng,
                     SwarmTimerScheduler, address conversion, null ports), swarm-deferred-packet-queue.h
@@ -63,6 +66,15 @@ docker run --rm -v "$PWD:/src/swarm-core:ro" ghcr.io/swarm-routing/ns3-dev:lates
 
 ```bash
 cmake -S core -B build/core && cmake --build build/core && ctest --test-dir build/core
+```
+
+Microbenchmarks of the per-packet primitives (`core/bench/`, dev-only; fetches
+Google Benchmark at the commit and hash pinned in `core/CMakeLists.txt`; CI
+builds and runs them once per PR, report-only, swarm-routing/.github#32):
+
+```bash
+cmake -S core -B build/bench -DCMAKE_BUILD_TYPE=Release -DSWARM_CORE_BENCH=ON
+cmake --build build/bench --target swarm_core_bench && build/bench/swarm_core_bench
 ```
 
 Automatic runs (push, PR: `latest`) must pass `test.py -s swarm-core` on debug

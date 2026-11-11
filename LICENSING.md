@@ -7,6 +7,7 @@
 | Path | What | Licence |
 |------|------|---------|
 | `core/` | the simulator-free primitives and their tests (no ns-3 header; [`core/LICENSE`](core/LICENSE)); much of it derived from AntHocNet's dual-licensed `core/`, each file naming its source | `MIT OR GPL-2.0-only` |
+| `core/bench/` | dev-only microbenchmarks of the primitives (built only with `-DSWARM_CORE_BENCH=ON`, never part of the ns-3 module or a release). They link Google Benchmark (Apache-2.0), fetched at a pinned commit at build time and never vendored or redistributed; they are the one `core/` path that includes something outside the standard library and `core/`, so the licence check's include rule skips them (`header-exclude` in `ci.yml`) | `MIT OR GPL-2.0-only` |
 | `tools/` | standalone scripts (checks, release, data handling) | `MIT OR GPL-2.0-only` |
 | `model/`, `helper/`, `test/`, `examples/`, `CMakeLists.txt` | the `swarm-core` ns-3 contrib module | `GPL-2.0-only` |
 | `docs`, `README.md`, `AGENTS.md`, `CLAUDE.md` | docs | `GPL-2.0-only` |

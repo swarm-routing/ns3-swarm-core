@@ -45,6 +45,9 @@ jobs:
       determinism: swarm-core-seed --seed={seed}
       dual-roots: 'core/ tools/'
       core-roots: 'core/'
+      # The dev-only microbenchmarks include <benchmark/benchmark.h>, outside
+      # the standard library: they are never shipped (LICENSING.md, #45).
+      header-exclude: '^core/bench/'
     secrets:
       SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
 
@@ -57,3 +60,35 @@ jobs:
       contents: read
       id-token: write
     uses: swarm-routing/.github/.github/workflows/reusable-codecov.yml@main
+
+  # The core microbenchmarks (core/bench/, #45): built against Google Benchmark
+  # at the commit and archive hash core/CMakeLists.txt pins, run once, the JSON
+  # kept as an artifact. Report-only and not a required check: shared runners
+  # are too noisy for a gate. PR-vs-base comparison and history on main are
+  # swarm-routing/.github#32.
+  bench:
+    if: inputs.ns3-versions == ''
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    steps:
+      - name: Harden the runner (audit egress)
+        uses: step-security/harden-runner@1d88384fd173af6ecb012dfd0264a306b711241a # v2.22.4
+        with:
+          egress-policy: audit
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: Build (Release)
+        run: |
+          cmake -S core -B build/bench -DCMAKE_BUILD_TYPE=Release -DSWARM_CORE_BENCH=ON
+          cmake --build build/bench -j "$(nproc)" --target swarm_core_bench
+      - name: Run
+        run: |
+          build/bench/swarm_core_bench --benchmark_repetitions=5 \
+            --benchmark_report_aggregates_only --benchmark_out=bench.json \
+            --benchmark_out_format=json
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: core-bench
+          path: bench.json
+          retention-days: 7

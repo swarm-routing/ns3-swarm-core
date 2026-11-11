@@ -10,6 +10,7 @@
 #include "../swarm-selection.h"
 #include "swarm-core-tests.h"
 
+#include <algorithm>
 #include <array>
 #include <cmath>
 #include <cstdint>
@@ -110,6 +111,43 @@ void TestSelectionDeterminism(Checker& c) {
     const std::vector<NodeAddress> pinned{4, 4, 4, 3, 4, 4, 4, 4, 2, 2, 2, 4, 2, 2, 4, 2};
     c.check(std::vector<NodeAddress>(a.begin(), a.begin() + 16) == pinned,
             "the pinned sequence for seed 2026");
+}
+
+void TestSelectionScratch(Checker& c) {
+    PheromoneTable t(64);
+    for (NodeAddress n = 0; n < 16; ++n)
+        t.set(7, n, 0.05 * (n % 5));  // zeros among them: left out
+    t.set(8, 3, 1.0);
+
+    // The scratch overloads give the same weights, and the same picks with
+    // the same draws, as the allocating calls; scratch is overwritten.
+    std::vector<WeightedHop> scratch{{99, 9.0}, {98, 8.0}};
+    for (NodeAddress exclude : {kInvalidAddress, NodeAddress{4}, NodeAddress{3}}) {
+        for (NodeAddress dest : {NodeAddress{7}, NodeAddress{8}, NodeAddress{5}}) {
+            const auto w = selectionWeights(t, dest, 2.0, exclude);
+            const auto s = selectionWeights(t, dest, 2.0, scratch, exclude);
+            c.check(std::equal(w.begin(), w.end(), s.begin(), s.end()) &&
+                        s.data() == scratch.data() && scratch.size() == w.size(),
+                    "scratch weights equal the allocating ones");
+        }
+    }
+    SeededRng a(11);
+    SeededRng b(11);
+    bool same = true;
+    for (int i = 0; i < 2000 && same; ++i) {
+        const NodeAddress dest = i % 3 == 0 ? 8 : 7;
+        const NodeAddress exclude = i % 4 == 0 ? NodeAddress{4} : kInvalidAddress;
+        same = selectNextHop(t, dest, 1.5, a, exclude) ==
+               selectNextHop(t, dest, 1.5, b, scratch, exclude);
+    }
+    c.check(same && a.draws() == b.draws(), "scratch selection: same picks, same draws");
+    SeededRng none(1);
+    c.check(selectNextHop(t, 5, 1.0, none, scratch) == kInvalidAddress && none.draws() == 0 &&
+                scratch.empty(),
+            "no route: no draw, empty scratch");
+    // Only the excluded hop: it is taken, as the allocating call does.
+    SeededRng only(2);
+    c.check(selectNextHop(t, 8, 1.0, only, scratch, 3) == 3, "only way taken");
 }
 
 void TestRouteDecision(Checker& c) {
