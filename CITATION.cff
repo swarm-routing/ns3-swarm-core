@@ -16,7 +16,7 @@ authors:
   - family-names: Joppi
     given-names: Daniel Henrique
     orcid: "https://orcid.org/0009-0009-6436-8174"
-version: "0.0.0"
+version: "0.1.0"
 # The work as a whole; core/ tools/ also MIT OR GPL-2.0-only (LICENSING.md).
 license: GPL-2.0-only
 repository-code: "https://github.com/swarm-routing/ns3-swarm-core"
