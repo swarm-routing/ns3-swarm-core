@@ -26,6 +26,10 @@ this plan is a live query rather than a diagram that drifts:
 | v1.0.0 | [`release:v1.0.0`](https://github.com/swarm-routing/ns3-swarm-core/issues?q=is%3Aopen+label%3A%22release%3Av1.0.0%22) |
 | all epics | [`epic`](https://github.com/swarm-routing/ns3-swarm-core/issues?q=is%3Aopen+label%3Aepic) |
 
+The labels are applied right after the `release:` labels land in the org
+taxonomy, so a board can be empty or incomplete until then: read this page's
+exit-criteria table for the gates in the meantime.
+
 Only issues the ladder actually gates are labelled, one release label per
 issue. Everything else is unscheduled work that lands whenever it lands.
 Majors are reserved for breaking changes; 1.0.0 is the stability promise.
@@ -98,7 +102,10 @@ and byte-identical for the existing consumers (ARA, BeeAdHoc) before it ships;
 
 ### The release train
 
-swarm-core sits in the org's release train (waves A to E, in the org ROADMAP):
+swarm-core sits in the org's release train (waves A to E), adopted by the
+maintainer on 2026-11-11. The org ROADMAP is being updated to carry it (it
+replaces the phase-targets table); until that lands, this section is the
+record of swarm-core's part:
 
 - **A (now):** ns3-swarm-core v0.1.0 (#38), ns3-tools v0.1.0 (after the
   tag-push fix swarm-routing/ns3-tools#105), AntHocNet v2.7.0.
