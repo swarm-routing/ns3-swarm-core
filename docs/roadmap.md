@@ -140,6 +140,24 @@ it never gates a release's exit criteria. The one item that gates a release is
 version drift is not tracked here: CI follows the release ns-3 supports with no
 edit (org CONTRIBUTING invariant 7).
 
+## After 1.0
+
+The org plans themed lines after the 1.0.0 releases. They are recorded in the
+[org ROADMAP](https://github.com/swarm-routing/.github/blob/main/ROADMAP.md), the
+first three in `swarm-routing/ns3-tools`' own
+[roadmap](https://github.com/swarm-routing/ns3-tools/blob/main/docs/roadmap.md#after-10):
+
+- **1.1 comparators**: secure, learned and DTN arms, and AOMDV/GPSR promoted from AntHocNet ([ns3-tools#15](https://github.com/swarm-routing/ns3-tools/issues/15), [ns3-tools#34](https://github.com/swarm-routing/ns3-tools/issues/34));
+- **1.2 network families**: the substrates new network types need ([ns3-tools#43](https://github.com/swarm-routing/ns3-tools/issues/43));
+- **2.0 security**: adversary nodes ([ns3-tools#37](https://github.com/swarm-routing/ns3-tools/issues/37)) and the secure swarm variants ([ARA#9](https://github.com/swarm-routing/ARA/issues/9), [ARA#10](https://github.com/swarm-routing/ARA/issues/10), [BeeAdHoc#9](https://github.com/swarm-routing/BeeAdHoc/issues/9));
+- **later**: more swarm protocols ([.github#54](https://github.com/swarm-routing/.github/issues/54)) and other simulators ([.github#48](https://github.com/swarm-routing/.github/issues/48), deferred).
+
+**None of them gates any release of this repository before 1.0**, and none has
+an issue here today: the arms and substrates live in `swarm-routing/ns3-tools`
+and in each protocol repository. A primitive one of
+them needs moves here only when a second protocol needs it too (rule 11), as an
+additive minor release.
+
 ## Deliberate non-goals
 
 - **No protocol logic.** swarm-core holds what two or more protocols share
