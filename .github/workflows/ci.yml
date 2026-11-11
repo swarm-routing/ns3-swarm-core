@@ -10,6 +10,7 @@ on:
   push:
     branches: [main]
   pull_request:
+  merge_group:  # the merge queue runs the required checks on each group (swarm-routing/.github#130)
   workflow_dispatch:
     inputs:
       ns3-versions:
