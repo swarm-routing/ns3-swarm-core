@@ -1,0 +1,28 @@
+# Code owners (swarm-routing/.github#31). This repository's own rules go
+# above the org section: in CODEOWNERS the last matching line wins, so the
+# paths that encode an org invariant keep their owner whatever is added here.
+# An owner is only requested as a reviewer; whether that review is required
+# is the `main` ruleset's require_code_owner_review (off: one maintainer
+# cannot approve his own pull requests).
+
+# org-sync:begin codeowners
+# Managed by swarm-routing/.github tools/org-sync (templates/codeowners/):
+# the paths that encode an org invariant (AGENTS.md golden rules).
+# Licence boundary (rules 1-2): the licence texts and the per-directory table.
+/LICENSE @danieljoppi
+/LICENSE-MIT @danieljoppi
+/LICENSING.md @danieljoppi
+# The dual-licensed, simulator-free core (rules 1-2).
+/core/ @danieljoppi
+# Wire formats (rule 3): codecs, ns-3 headers and packets, the layout doc.
+*_codec.* @danieljoppi
+*-codec.* @danieljoppi
+*_wire.* @danieljoppi
+*-wire.* @danieljoppi
+*-header.* @danieljoppi
+*-packet.* @danieljoppi
+wire-format.md @danieljoppi
+# CI (rule 8), the licence gate among the workflows, and this file.
+/.github/workflows/ @danieljoppi
+/.github/CODEOWNERS @danieljoppi
+# org-sync:end codeowners
