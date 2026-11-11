@@ -11,6 +11,7 @@ build_lib(
   LIBNAME swarm-core
   SOURCE_FILES
     core/swarm-dedup-history.cc
+    core/swarm-observer.cc
     core/swarm-pheromone-table.cc
     core/swarm-selection.cc
     helper/swarm-routing-helper.cc
@@ -24,6 +25,7 @@ build_lib(
   HEADER_FILES
     core/swarm-dedup-history.h
     core/swarm-link-metric.h
+    core/swarm-observer.h
     core/swarm-pheromone-table.h
     core/swarm-ports.h
     core/swarm-route-decision.h
@@ -43,6 +45,7 @@ build_lib(
                     ${libenergy} ${libmobility}
   TEST_SOURCES
     core/test/all-tests.cc
+    core/test/test-observer.cc
     core/test/test-selection.cc
     core/test/test-structures.cc
     core/test/test-wire.cc

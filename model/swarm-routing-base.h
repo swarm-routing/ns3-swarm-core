@@ -18,7 +18,11 @@
 // - the previous hop of every data packet (SwarmPrevHopTag), which ns-3's
 //   RouteInput does not expose and per-hop learning needs;
 // - link failures from the node's WifiLinkMonitor (MAC retry limit) and
-//   IslLinkMonitor (interface down), delivered to OnLinkFailure.
+//   IslLinkMonitor (interface down), delivered to OnLinkFailure;
+// - the router observer (core/swarm-observer.h, #42): Observer() is the
+//   IRouterObserver the adapter hands its core; it feeds the ControlTx,
+//   ControlRx, RouteChanged, DataDecision and StateSize trace sources and
+//   bounded per-node counters (GetRouterStats), and only reads (org rule 5).
 //
 // Derived from swarm-routing/AntHocNet
 // ns3/baselines/adaptive/model/adaptive-routing-base.{h,cc} @ 3e53f04
@@ -32,6 +36,7 @@
 #include "swarm-deferred-packet-queue.h"
 #include "swarm-ns3-ports.h"
 
+#include "ns3/swarm-observer.h"
 #include "ns3/swarm-route-decision.h"
 
 #include "ns3/ipv4-interface-address.h"
@@ -42,7 +47,11 @@
 #include "ns3/socket.h"
 #include "ns3/tag.h"
 #include "ns3/timer.h"
+#include "ns3/traced-callback.h"
 
+#include <cstdint>
+#include <span>
+#include <string>
 #include <utility>
 #include <vector>
 
@@ -84,6 +93,35 @@ public:
     virtual int64_t AssignStreams(int64_t stream);
 
     Ptr<DeferredPacketQueue> GetDeferredQueue() const { return m_queue; }
+
+    // --- the router observer ---------------------------------------------------
+
+    /// ControlTx: a control message of `kind` (the protocol's wire type byte)
+    /// left this node, `bytes` long.
+    using ControlTxTracedCallback = void (*)(uint8_t kind, bool broadcast, uint32_t bytes);
+    /// ControlRx: this node processed a received control message of `kind`.
+    using ControlRxTracedCallback = void (*)(uint8_t kind, uint32_t bytes);
+    /// RouteChanged: a route to `dest` through `nextHop` was added or removed.
+    using RouteChangedTracedCallback = void (*)(Ipv4Address dest, Ipv4Address nextHop, bool added);
+    /// DataDecision: what the core decided for a data packet to `dest`.
+    using DataDecisionTracedCallback = void (*)(Ipv4Address dest, swarm::core::RouteAction action);
+    /// StateSize: the protocol's routing-state footprint.
+    using StateSizeTracedCallback = void (*)(uint32_t entries, uint32_t bytes);
+
+    /// This node's observer counters, time averages taken up to now. The
+    /// window starts when the protocol is created, or at ResetRouterStats.
+    swarm::core::RouterStats GetRouterStats() const;
+    void ResetRouterStats();
+
+    /// Names the control kinds of `protocol` (its TypeId) for readers; a
+    /// protocol registers its static KindName table once. A later call
+    /// replaces the names. At most 256 kinds, the width of the byte.
+    static void SetKindNames(TypeId protocol, std::span<const swarm::core::KindName> names);
+    /// The name of `kind` for `protocol` or its nearest registered parent,
+    /// else the kind number in decimal.
+    static std::string GetKindName(TypeId protocol, uint8_t kind);
+    /// The name of `kind` for this protocol.
+    std::string KindName(uint8_t kind) const;
 
     // Ipv4RoutingProtocol
     Ptr<Ipv4Route> RouteOutput(Ptr<Packet> p, const Ipv4Header& header, Ptr<NetDevice> oif,
@@ -186,6 +224,10 @@ protected:
     Ipv4Address MainAddress() const;
     bool IsMyAddress(Ipv4Address a) const;
 
+    /// The router observer the adapter hands its core (as an
+    /// IRouterObserver*), and calls itself for what only the adapter sees.
+    swarm::core::IRouterObserver& Observer() { return m_observer; }
+
     // --- the core's ports ------------------------------------------------------
 
     const swarm::core::IClock& Clock() const { return m_clock; }
@@ -212,6 +254,24 @@ private:
     void WifiLinkFailed(Ipv4Address neighbor, Mac48Address mac);
     void IslLinkChanged(Ipv4Address peer, bool up);
 
+    /// Counts every event and fires the matching trace source.
+    class TracingObserver : public swarm::core::IRouterObserver {
+    public:
+        explicit TracingObserver(SwarmRoutingBase& base);
+        void onControlSent(uint8_t kind, bool broadcast, uint32_t bytes) override;
+        void onControlReceived(uint8_t kind, uint32_t bytes) override;
+        void onRouteChanged(swarm::core::NodeAddress dest, swarm::core::NodeAddress nextHop,
+                            bool added) override;
+        void onDataDecision(swarm::core::NodeAddress dest,
+                            swarm::core::RouteAction action) override;
+        void onStateSize(uint32_t entries, uint32_t bytes) override;
+
+        swarm::core::CountingObserver counting;
+
+    private:
+        SwarmRoutingBase& m_base;
+    };
+
     Ptr<Ipv4> m_ipv4;
     Ptr<NetDevice> m_lo;
     /// Sockets in creation (interface) order: a map keyed by Ptr<Socket> would
@@ -226,6 +286,12 @@ private:
     SwarmClock m_clock;
     SwarmRng m_rng;
     SwarmTimerScheduler m_timers;
+    TracedCallback<uint8_t, bool, uint32_t> m_controlTx;
+    TracedCallback<uint8_t, uint32_t> m_controlRx;
+    TracedCallback<Ipv4Address, Ipv4Address, bool> m_routeChanged;
+    TracedCallback<Ipv4Address, swarm::core::RouteAction> m_dataDecision;
+    TracedCallback<uint32_t, uint32_t> m_stateSize;
+    TracingObserver m_observer;  ///< after m_clock, which it reads
     /// Set across a control SendTo, so RouteOutput answers with a one-hop
     /// route to the neighbour instead of asking the protocol.
     Ipv4Address m_directTo;

@@ -24,20 +24,25 @@ core/               simulator-free primitives, namespace swarm::core — MIT OR 
                     ILinkState, ILinkQuality, IEnergy), swarm-wire.h (LE WireWriter/WireReader, version byte),
                     swarm-visited-path.h, swarm-dedup-history.{h,cc}, swarm-pheromone-table.{h,cc},
                     swarm-selection.{h,cc} (roulette, evaporationFactor), swarm-route-decision.h,
-                    swarm-link-metric.h (ILinkMetric); CMakeLists.txt builds it alone, no ns-3
+                    swarm-link-metric.h (ILinkMetric), swarm-observer.{h,cc} (IRouterObserver, KindName,
+                    CountingObserver -> RouterStats: bounded counters); CMakeLists.txt builds it alone, no ns-3
 core/test/          the core tests, one function per primitive (MIT OR GPL-2.0-only); run by ctest and by test.py
 model/              ns-3 glue — GPL-2.0-only; each file derived from AntHocNet names its source file and commit:
                     swarm-core.h (kSwarmCoreApiVersion, SwarmCoreSeed), swarm-ns3-ports.h (SwarmClock, SwarmRng,
                     SwarmTimerScheduler, address conversion, null ports), swarm-deferred-packet-queue.h
                     (DeferredPacketQueue: MaxPackets 64 / MaxAge 30 s attributes, drop accounting),
-                    swarm-routing-base.h (SwarmRoutingBase: sockets, deferred route, prev-hop tag, ports, Execute),
+                    swarm-routing-base.h (SwarmRoutingBase: sockets, deferred route, prev-hop tag, ports, Execute;
+                    Observer() -> ControlTx/ControlRx/RouteChanged/DataDecision/StateSize trace sources,
+                    GetRouterStats, the kind-name registry SetKindNames/GetKindName),
                     swarm-wifi-link-monitor.h (ILinkState + ILinkQuality + retry-limit LinkFailure),
                     swarm-isl-link-monitor.h (INeighborProvider + ILinkState + LinkChange on p2p),
                     swarm-energy-metric-hook.h (IEnergy from an EnergySource's RemainingEnergy trace)
-helper/             swarm-routing-helper.h: SwarmRoutingHelper (one-call Install, AssignStreams), SwarmMonitorHelper
+helper/             swarm-routing-helper.h: SwarmRoutingHelper (one-call Install, AssignStreams, SetKindNames,
+                    CollectStats -> SwarmRoutingStats), SwarmMonitorHelper
 test/               swarm-core test suite: wraps every core/test/ function as a TestCase, plus the glue's
                     (swarm-glue-tests.cc: a toy protocol on the base, a 2-3 node scenario per monitor, and
-                    same-seed byte-identical output with and without every monitor)
+                    the router observer's trace sources and counters, same-seed byte-identical output
+                    with and without every monitor and the observer)
 examples/           swarm-core-seed: the determinism gate's program (seeded draws + a roulette sequence through IRng)
 .github/workflows/  ci.yml (reusable-ns3-ci: strict warnings, coverage, determinism, format, headers), pr-title.yml
 ```
@@ -255,6 +260,7 @@ here is undone by the next `org_sync.py apply`).
 |--------------|-------|
 | Source of the primitives | AntHocNet `core/include/anthocnet/core/`, `core/src/` (MIT OR GPL-2.0-only → `core/` here); each `core/` file names its source file and commit |
 | Use or extend a primitive | `core/swarm-*.h` (the API, documented in place), its test in `core/test/`, the list in `core/test/all-tests.cc` |
+| Report a protocol's internals (control by kind, route changes, data decisions, state footprint) | its core calls `swarm::core::IRouterObserver` (`core/swarm-observer.h`), the adapter passes `&Observer()` and registers its `KindName` table; read with the trace sources or `SwarmRoutingHelper::CollectStats` (#42; consumer: swarm-routing/ns3-tools#91) |
 | Write a protocol's ns-3 adapter | derive from `SwarmRoutingBase` (`model/swarm-routing-base.h`: the hooks, services and ports), install with `SwarmRoutingHelper`; the toy protocol in `test/swarm-glue-tests.cc` is a minimal example |
 | Source of the glue | AntHocNet `ns3/baselines/adaptive/model/adaptive-routing-base.*`, `ns3/anthocnet/model/anthocnet-{adapters,rqueue,routing-protocol}.*` (GPL-2.0-only → `model/` here) |
 | Wire-format discipline | AntHocNet `docs/wire-format.md`, ADR-0006 |
