@@ -3,6 +3,8 @@ kind = "protocol"
 # CITATION.cff seed and cite badge. Once Zenodo archives a release: set zenodo_concept = "<record id>"
 # (read from Zenodo), then `org_sync.py reseed CITATION.cff` so CITATION.cff names the DOI.
 citation = true
+# the Zenodo concept record (read from zenodo.org on 2026-11-11, v0.1.0 archived)
+zenodo_concept = "24138628"
 title = "ns3-swarm-core"
 module = "swarm-core"
 dual = ["core/", "tools/"]
