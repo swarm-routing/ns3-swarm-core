@@ -31,6 +31,7 @@ endif()
 
 add_library(swarm_core STATIC
   swarm-dedup-history.cc
+  swarm-observer.cc
   swarm-pheromone-table.cc
   swarm-selection.cc
 )
@@ -39,6 +40,7 @@ target_include_directories(swarm_core PUBLIC ${CMAKE_CURRENT_SOURCE_DIR})
 add_executable(swarm_core_tests
   test/all-tests.cc
   test/run-core-tests.cc
+  test/test-observer.cc
   test/test-selection.cc
   test/test-structures.cc
   test/test-wire.cc
