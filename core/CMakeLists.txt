@@ -51,7 +51,9 @@ add_test(NAME swarm-core COMMAND swarm_core_tests)
 if(SWARM_CORE_BENCH)
   include(FetchContent)
   # Google Benchmark v1.9.5 (Apache-2.0), pinned by commit and archive hash
-  # (swarm-routing/.github#32). Its own tests and install rules stay off, and
+  # (swarm-routing/.github#32). The hash is GitHub's archive of the commit; it
+  # equals `git archive --format=tar --prefix=benchmark-<sha>/ <sha> | gzip -cn`
+  # of a clone, so a bump can be checked from git alone. Its own tests and install rules stay off, and
   # this project's strict warnings do not apply to it.
   set(BENCHMARK_ENABLE_TESTING OFF CACHE BOOL "" FORCE)
   set(BENCHMARK_ENABLE_GTEST_TESTS OFF CACHE BOOL "" FORCE)
@@ -59,7 +61,7 @@ if(SWARM_CORE_BENCH)
   set(BENCHMARK_ENABLE_WERROR OFF CACHE BOOL "" FORCE)
   FetchContent_Declare(googlebenchmark
     URL https://github.com/google/benchmark/archive/192ef10025eb2c4cdd392bc502f0c852196baa48.tar.gz
-    URL_HASH SHA256=eeb05dc9da1bb5caff4743b4df58f4c84b2105da18c4168c2b9f5d15cbf25a57
+    URL_HASH SHA256=f82705a2726d8f6cdcda274b841f6314dbfc6f731cdda06c946f310ec1cc3ad9
     DOWNLOAD_EXTRACT_TIMESTAMP TRUE)
   # The strict warnings above are this directory's; targets made from here on
   # (Google Benchmark's, the bench's) start without them.
