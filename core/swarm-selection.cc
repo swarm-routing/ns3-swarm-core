@@ -16,19 +16,18 @@ bool usable(double w) {
     return std::isfinite(w) && w > 0.0;
 }
 
-std::vector<WeightedHop> weightsExcluding(const std::vector<PheromoneTable::Entry>& entries,
-                                          double beta, NodeAddress exclude) {
+void weightsExcluding(std::span<const PheromoneTable::Entry> entries, double beta,
+                      NodeAddress exclude, std::vector<WeightedHop>& out) {
+    out.clear();
     double best = 0.0;
     for (const auto& e : entries) {
         if (e.neighbor != exclude && e.value > best) best = e.value;
     }
-    std::vector<WeightedHop> out;
-    if (best <= 0.0) return out;
+    if (best <= 0.0) return;
     for (const auto& e : entries) {
         if (e.neighbor == exclude || e.value <= 0.0) continue;
         out.push_back({e.neighbor, std::pow(e.value / best, beta)});
     }
-    return out;
 }
 
 }  // namespace
@@ -53,13 +52,21 @@ NodeAddress rouletteSelect(std::span<const WeightedHop> candidates, IRng& rng) {
     return chosen;
 }
 
+std::span<const WeightedHop> selectionWeights(const PheromoneTable& table, NodeAddress dest,
+                                              double beta, std::vector<WeightedHop>& out,
+                                              NodeAddress exclude) {
+    const auto entries = table.row(dest);
+    weightsExcluding(entries, beta, exclude, out);
+    if (out.empty() && exclude != kInvalidAddress) {
+        weightsExcluding(entries, beta, kInvalidAddress, out);
+    }
+    return out;
+}
+
 std::vector<WeightedHop> selectionWeights(const PheromoneTable& table, NodeAddress dest,
                                           double beta, NodeAddress exclude) {
-    const auto entries = table.entries(dest);
-    auto out = weightsExcluding(entries, beta, exclude);
-    if (out.empty() && exclude != kInvalidAddress) {
-        out = weightsExcluding(entries, beta, kInvalidAddress);
-    }
+    std::vector<WeightedHop> out;
+    selectionWeights(table, dest, beta, out, exclude);
     return out;
 }
 
@@ -80,8 +87,13 @@ std::vector<WeightedHop> selectionDistribution(const PheromoneTable& table, Node
 
 NodeAddress selectNextHop(const PheromoneTable& table, NodeAddress dest, double beta, IRng& rng,
                           NodeAddress exclude) {
-    const auto weights = selectionWeights(table, dest, beta, exclude);
-    return rouletteSelect(weights, rng);
+    std::vector<WeightedHop> scratch;
+    return selectNextHop(table, dest, beta, rng, scratch, exclude);
+}
+
+NodeAddress selectNextHop(const PheromoneTable& table, NodeAddress dest, double beta, IRng& rng,
+                          std::vector<WeightedHop>& scratch, NodeAddress exclude) {
+    return rouletteSelect(selectionWeights(table, dest, beta, scratch, exclude), rng);
 }
 
 double evaporationFactor(double retainPerInterval, Time elapsed, Time interval) {

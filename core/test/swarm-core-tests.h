@@ -20,11 +20,18 @@ void TestVisitedPath(Checker& c);
 void TestVisitedPathWire(Checker& c);
 void TestDedupHistory(Checker& c);
 void TestPheromoneTable(Checker& c);
+void TestPheromoneRows(Checker& c);
+void TestOnePassEvaporation(Checker& c);
+void TestPheromoneTableModel(Checker& c);
 void TestEvaporation(Checker& c);
 void TestRoulette(Checker& c);
 void TestSelectionDeterminism(Checker& c);
+void TestSelectionScratch(Checker& c);
 void TestRouteDecision(Checker& c);
 void TestPortsAndMetric(Checker& c);
+void TestObserverCallbacks(Checker& c);
+void TestObserverCounters(Checker& c);
+void TestObserverNonIntrusive(Checker& c);
 
 /// One named test, for the runners.
 struct NamedTest {

@@ -1,0 +1,15 @@
+# Managed by swarm-routing/.github tools/org-sync: edit templates/workflows/dco.yml there.
+name: dco
+
+# Developer Certificate of Origin: every outside commit is signed off
+# (swarm-routing/.github CONTRIBUTING "Outside contributions").
+on:
+  pull_request:
+
+permissions:
+  contents: read
+  pull-requests: read
+
+jobs:
+  dco:
+    uses: swarm-routing/.github/.github/workflows/reusable-dco.yml@main

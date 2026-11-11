@@ -17,8 +17,12 @@
 #include "ns3/node.h"
 #include "ns3/output-stream-wrapper.h"
 #include "ns3/pointer.h"
+#include "ns3/trace-source-accessor.h"
 #include "ns3/udp-header.h"
 #include "ns3/udp-socket-factory.h"
+
+#include <map>
+#include <string>
 
 namespace ns3 {
 
@@ -29,6 +33,13 @@ namespace {
 /// IANA protocol number of UDP. Spelled out: the ns-3 constant moved between
 /// releases (UdpL4Protocol::PROT_NUMBER is deprecated in 3.49).
 constexpr uint8_t kUdpProtocol = 17;
+
+/// Kind names by protocol TypeId name, then kind: ordered maps (org rule 5),
+/// bounded by the registered protocols x 256 kinds (org rule 7).
+std::map<std::string, std::map<uint8_t, std::string>>& KindRegistry() {
+    static std::map<std::string, std::map<uint8_t, std::string>> registry;
+    return registry;
+}
 
 }  // namespace
 
@@ -83,13 +94,36 @@ TypeId SwarmRoutingBase::GetTypeId() {
                           "dropped (500 ms, AntHocNet's adaptive RoutingBase).",
                           TimeValue(MilliSeconds(500)),
                           MakeTimeAccessor(&SwarmRoutingBase::m_purgeInterval),
-                          MakeTimeChecker(MilliSeconds(1)));
+                          MakeTimeChecker(MilliSeconds(1)))
+            .AddTraceSource("ControlTx",
+                            "A control message left this node: its kind (the protocol's wire "
+                            "type byte), whether it was broadcast, and its size in bytes.",
+                            MakeTraceSourceAccessor(&SwarmRoutingBase::m_controlTx),
+                            "ns3::SwarmRoutingBase::ControlTxTracedCallback")
+            .AddTraceSource("ControlRx",
+                            "This node processed a received control message: its kind and size.",
+                            MakeTraceSourceAccessor(&SwarmRoutingBase::m_controlRx),
+                            "ns3::SwarmRoutingBase::ControlRxTracedCallback")
+            .AddTraceSource("RouteChanged",
+                            "A route to a destination through a next hop was added (true) or "
+                            "removed (false).",
+                            MakeTraceSourceAccessor(&SwarmRoutingBase::m_routeChanged),
+                            "ns3::SwarmRoutingBase::RouteChangedTracedCallback")
+            .AddTraceSource("DataDecision",
+                            "What the protocol decided for a data packet: forwarded (Unicast), "
+                            "Queue, Drop or Deliver.",
+                            MakeTraceSourceAccessor(&SwarmRoutingBase::m_dataDecision),
+                            "ns3::SwarmRoutingBase::DataDecisionTracedCallback")
+            .AddTraceSource("StateSize",
+                            "The protocol's routing-state footprint: entries and bytes.",
+                            MakeTraceSourceAccessor(&SwarmRoutingBase::m_stateSize),
+                            "ns3::SwarmRoutingBase::StateSizeTracedCallback");
     return tid;
 }
 
 SwarmRoutingBase::SwarmRoutingBase()
     : m_queue(CreateObject<DeferredPacketQueue>()), m_purgeInterval(MilliSeconds(500)),
-      m_purgeTimer(Timer::CANCEL_ON_DESTROY) {}
+      m_purgeTimer(Timer::CANCEL_ON_DESTROY), m_observer(*this) {}
 
 SwarmRoutingBase::~SwarmRoutingBase() = default;
 
@@ -186,6 +220,79 @@ const swarm::core::IEnergy& SwarmRoutingBase::Energy() const {
         return *hook;
     }
     return kNull;
+}
+
+// --- the router observer ------------------------------------------------------------
+
+SwarmRoutingBase::TracingObserver::TracingObserver(SwarmRoutingBase& base)
+    : counting(base.m_clock), m_base(base) {}
+
+void SwarmRoutingBase::TracingObserver::onControlSent(uint8_t kind, bool broadcast,
+                                                      uint32_t bytes) {
+    counting.onControlSent(kind, broadcast, bytes);
+    m_base.m_controlTx(kind, broadcast, bytes);
+}
+
+void SwarmRoutingBase::TracingObserver::onControlReceived(uint8_t kind, uint32_t bytes) {
+    counting.onControlReceived(kind, bytes);
+    m_base.m_controlRx(kind, bytes);
+}
+
+void SwarmRoutingBase::TracingObserver::onRouteChanged(swarm::core::NodeAddress dest,
+                                                       swarm::core::NodeAddress nextHop,
+                                                       bool added) {
+    counting.onRouteChanged(dest, nextHop, added);
+    m_base.m_routeChanged(ToIpv4Address(dest), ToIpv4Address(nextHop), added);
+}
+
+void SwarmRoutingBase::TracingObserver::onDataDecision(swarm::core::NodeAddress dest,
+                                                       swarm::core::RouteAction action) {
+    counting.onDataDecision(dest, action);
+    m_base.m_dataDecision(ToIpv4Address(dest), action);
+}
+
+void SwarmRoutingBase::TracingObserver::onStateSize(uint32_t entries, uint32_t bytes) {
+    counting.onStateSize(entries, bytes);
+    m_base.m_stateSize(entries, bytes);
+}
+
+swarm::core::RouterStats SwarmRoutingBase::GetRouterStats() const {
+    return m_observer.counting.stats();
+}
+
+void SwarmRoutingBase::ResetRouterStats() {
+    m_observer.counting.reset();
+}
+
+void SwarmRoutingBase::SetKindNames(TypeId protocol, std::span<const swarm::core::KindName> names) {
+    std::map<uint8_t, std::string>& table = KindRegistry()[protocol.GetName()];
+    table.clear();
+    for (const swarm::core::KindName& k : names) {
+        if (k.name) {
+            table[k.kind] = k.name;
+        }
+    }
+}
+
+std::string SwarmRoutingBase::GetKindName(TypeId protocol, uint8_t kind) {
+    const auto& registry = KindRegistry();
+    for (TypeId t = protocol;; t = t.GetParent()) {
+        auto it = registry.find(t.GetName());
+        if (it != registry.end()) {
+            auto k = it->second.find(kind);
+            if (k != it->second.end()) {
+                return k->second;
+            }
+        }
+        if (!t.HasParent() || t.GetParent() == t) {
+            break;
+        }
+    }
+    return std::to_string(kind);
+}
+
+std::string SwarmRoutingBase::KindName(uint8_t kind) const {
+    return GetKindName(GetInstanceTypeId(), kind);
 }
 
 // --- addresses and routes --------------------------------------------------------

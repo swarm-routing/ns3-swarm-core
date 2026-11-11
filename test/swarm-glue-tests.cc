@@ -3,8 +3,9 @@
 //
 // Tests of the ns-3 glue: the ports over ns-3, DeferredPacketQueue,
 // SwarmRoutingBase (through a toy protocol with no routing logic), each
-// monitor in a two- or three-node scenario, and determinism: the same seed
-// gives byte-identical output with and without every monitor attached.
+// monitor in a two- or three-node scenario, the router observer (its trace
+// sources, counters and kind names), and determinism: the same seed gives
+// byte-identical output with and without every monitor and observer attached.
 #include "swarm-glue-tests.h"
 
 #include "ns3/basic-energy-source-helper.h"
@@ -29,6 +30,7 @@
 #include "ns3/wifi-helper.h"
 #include "ns3/yans-wifi-helper.h"
 
+#include <array>
 #include <cmath>
 #include <map>
 #include <sstream>
@@ -41,12 +43,18 @@ namespace {
 
 constexpr uint16_t kDataPort = 9;
 
+/// The toy protocol's control kinds, as a protocol names its own.
+constexpr uint8_t kHello = 1;
+constexpr uint8_t kMessage = 2;
+constexpr std::array<swarm::core::KindName, 2> kToyKinds{{{kHello, "HELLO"}, {kMessage, "MSG"}}};
+
 // --- a toy protocol: static next hops, learned after a "discovery" delay ------
 
 /// A SwarmRoutingBase with no routing logic: next hops come from a table the
 /// test fills; a route in `pending` is learned `discoveryDelay` (plus a jitter
 /// drawn from the Rng port) after StartDiscovery asks for it. It records what
-/// the base hands it, so the test can check the plumbing.
+/// the base hands it, so the test can check the plumbing, and reports every
+/// event through Observer() as a protocol's core would.
 class ToyProtocol : public SwarmRoutingBase {
 public:
     static TypeId GetTypeId();
@@ -62,11 +70,15 @@ public:
     std::vector<Ipv4Address> ups;
     uint32_t discoveries = 0;
 
-    void SendHelloNow() { BroadcastControl(Create<Packet>(4)); }
+    void SendHelloNow() {
+        BroadcastControl(Create<Packet>(4));
+        Observer().onControlSent(kHello, true, 4);
+    }
 
     void UnicastMessage(Ipv4Address to, uint32_t size) {
         Execute(swarm::core::RouteDecision<uint32_t>::unicast(ToNodeAddress(to), size),
                 [](uint32_t s) { return Create<Packet>(s); });
+        Observer().onControlSent(kMessage, false, size);
     }
 
     void DiscardViaCore(Ipv4Address dst) {
@@ -97,6 +109,7 @@ protected:
 
     void StartDiscovery(Ipv4Address dst) override {
         ++discoveries;
+        Observer().onDataDecision(ToNodeAddress(dst), swarm::core::RouteAction::Queue);
         auto it = pending.find(dst);
         if (it == pending.end()) {
             return;
@@ -105,6 +118,9 @@ protected:
         const double delay = discoveryDelay + discoveryJitter * Rng().uniform();
         Timers().schedule(delay, [this, dst, next]() {
             routes[dst] = next;
+            Observer().onRouteChanged(ToNodeAddress(dst), ToNodeAddress(next), true);
+            Observer().onStateSize(static_cast<uint32_t>(routes.size()),
+                                   static_cast<uint32_t>(routes.size() * 8));
             ReleaseDeferred(dst);
         });
     }
@@ -113,11 +129,21 @@ protected:
         std::ostringstream os;
         os << Clock().now() << " " << from << "->" << receiver << " " << p->GetSize();
         controlLog.push_back(os.str());
+        Observer().onControlReceived(p->GetSize() == 4 ? kHello : kMessage, p->GetSize());
     }
 
-    bool OnDataReceived(Ptr<const Packet>, const Ipv4Header&, Ipv4Address prev) override {
+    bool OnDataReceived(Ptr<const Packet>, const Ipv4Header& header, Ipv4Address prev) override {
         dataFrom.push_back(prev);
+        if (IsMyAddress(header.GetDestination())) {
+            Observer().onDataDecision(ToNodeAddress(header.GetDestination()),
+                                      swarm::core::RouteAction::Deliver);
+        }
         return true;
+    }
+
+    void OnDataForwarded(Ptr<const Packet>, const Ipv4Header& header, Ipv4Address) override {
+        Observer().onDataDecision(ToNodeAddress(header.GetDestination()),
+                                  swarm::core::RouteAction::Unicast);
     }
 
     void OnLinkFailure(Ipv4Address neighbor) override { failures.push_back(neighbor); }
@@ -396,6 +422,167 @@ private:
     }
 };
 
+// --- the router observer -------------------------------------------------------------
+
+/// Appends one line per trace-source event to `log`.
+void ConnectObserverTraces(Ptr<SwarmRoutingBase> p, std::vector<std::string>* log) {
+    p->TraceConnectWithoutContext(
+        "ControlTx",
+        MakeBoundCallback(
+            +[](std::vector<std::string>* out, uint8_t kind, bool broadcast, uint32_t bytes) {
+                out->push_back("tx " + std::to_string(kind) + (broadcast ? " b " : " u ") +
+                               std::to_string(bytes));
+            },
+            log));
+    p->TraceConnectWithoutContext(
+        "ControlRx",
+        MakeBoundCallback(
+            +[](std::vector<std::string>* out, uint8_t kind, uint32_t bytes) {
+                out->push_back("rx " + std::to_string(kind) + " " + std::to_string(bytes));
+            },
+            log));
+    p->TraceConnectWithoutContext(
+        "RouteChanged",
+        MakeBoundCallback(
+            +[](std::vector<std::string>* out, Ipv4Address dest, Ipv4Address next, bool added) {
+                std::ostringstream os;
+                os << "route " << dest << " " << next << " " << added;
+                out->push_back(os.str());
+            },
+            log));
+    p->TraceConnectWithoutContext(
+        "DataDecision",
+        MakeBoundCallback(
+            +[](std::vector<std::string>* out, Ipv4Address dest, swarm::core::RouteAction a) {
+                std::ostringstream os;
+                os << "data " << dest << " " << static_cast<int>(a);
+                out->push_back(os.str());
+            },
+            log));
+    p->TraceConnectWithoutContext(
+        "StateSize",
+        MakeBoundCallback(
+            +[](std::vector<std::string>* out, uint32_t entries, uint32_t bytes) {
+                out->push_back("state " + std::to_string(entries) + " " + std::to_string(bytes));
+            },
+            log));
+}
+
+class ObserverTestCase : public TestCase {
+public:
+    ObserverTestCase()
+        : TestCase("glue: the router observer's trace sources, counters, kind names") {}
+
+private:
+    void DoRun() override {
+        using swarm::core::RouteAction;
+        SwarmCoreSeed(1);
+        Line line("10Mbps");
+        Ptr<Node> n0 = line.nodes.Get(0);
+        Ptr<Node> n1 = line.nodes.Get(1);
+        Ptr<Node> n2 = line.nodes.Get(2);
+        const Ipv4Address n1a = Addr(n1, 1);
+        const Ipv4Address n2a = Addr(n2, 1);
+        Toy(n0)->pending[n2a] = n1a;
+        Toy(n1)->routes[n2a] = n2a;
+        std::vector<std::string> log0;
+        std::vector<std::string> log1;
+        std::vector<std::string> log2;
+        ConnectObserverTraces(Toy(n0), &log0);
+        ConnectObserverTraces(Toy(n1), &log1);
+        ConnectObserverTraces(Toy(n2), &log2);
+
+        std::vector<std::string> rx;
+        Ptr<Socket> sink = Sink(n2, &rx);
+        Ptr<Socket> src = Source(n0);
+        Simulator::Schedule(Seconds(0.2), [&]() {
+            for (uint32_t i = 0; i < 3; ++i) {
+                Toy(line.nodes.Get(i))->SendHelloNow();
+            }
+        });
+        Simulator::Schedule(Seconds(0.4), [&]() { Toy(n0)->UnicastMessage(n1a, 7); });
+        Simulator::Schedule(Seconds(1.0), [&]() { SendUdp(src, n2a, 100); });
+        Simulator::Stop(Seconds(3));
+        Simulator::Run();
+        NS_TEST_ASSERT_MSG_EQ(rx.size(), 1u, "the packet arrives");
+
+        // Every event reached its trace source, in order.
+        std::ostringstream route;
+        route << "route " << n2a << " " << n1a << " 1";
+        std::ostringstream toN2;
+        toN2 << n2a;
+        const std::vector<std::string> expected0{
+            "tx 1 b 4",
+            "rx 1 4",
+            "tx 2 u 7",
+            "data " + toN2.str() + " " + std::to_string(static_cast<int>(RouteAction::Queue)),
+            route.str(),
+            "state 1 8",
+            "data " + toN2.str() + " " + std::to_string(static_cast<int>(RouteAction::Unicast)),
+        };
+        NS_TEST_ASSERT_MSG_EQ(log0.size(), expected0.size(), "n0 events");
+        for (size_t i = 0; i < expected0.size(); ++i) {
+            NS_TEST_EXPECT_MSG_EQ(log0[i], expected0[i], "n0 event " << i);
+        }
+        NS_TEST_EXPECT_MSG_EQ(log1.size(), 5u, "n1: hello out, 2 hellos + 1 message in, forward");
+        NS_TEST_EXPECT_MSG_EQ(log1.back(),
+                              "data " + toN2.str() + " " +
+                                  std::to_string(static_cast<int>(RouteAction::Unicast)),
+                              "n1 forwards");
+        NS_TEST_EXPECT_MSG_EQ(log2.size(), 3u, "n2: hello out, hello in, delivery");
+        NS_TEST_EXPECT_MSG_EQ(log2.back(),
+                              "data " + toN2.str() + " " +
+                                  std::to_string(static_cast<int>(RouteAction::Deliver)),
+                              "n2 delivers");
+
+        // The per-node counters and their aggregate.
+        const SwarmRoutingStats stats = SwarmRoutingHelper::CollectStats(line.nodes);
+        NS_TEST_ASSERT_MSG_EQ(stats.perNode.size(), 3u, "one entry per node");
+        NS_TEST_EXPECT_MSG_EQ(stats.perNode[0].first, n0->GetId(), "in container order");
+        const swarm::core::RouterStats& s0 = stats.perNode[0].second;
+        NS_TEST_EXPECT_MSG_EQ(s0.control.at(kHello).txBroadcasts, 1u, "n0 hello");
+        NS_TEST_EXPECT_MSG_EQ(s0.control.at(kMessage).txBytes, 7u, "n0 message bytes");
+        NS_TEST_EXPECT_MSG_EQ(s0.routeAdds, 1u, "n0 learned one route");
+        NS_TEST_EXPECT_MSG_EQ(s0.peakStateEntries, 1u, "n0 peak state");
+        NS_TEST_EXPECT_MSG_EQ(s0.decisions(RouteAction::Queue), 1u, "n0 queued");
+        NS_TEST_EXPECT_MSG_EQ_TOL(s0.observedFor, 3.0, 1e-9, "window: the run");
+        // One entry from t = 1.5 (1.0 + the 0.5 s discovery) to 3: 1.5 / 3.
+        NS_TEST_EXPECT_MSG_EQ_TOL(s0.meanStateEntries, 0.5, 1e-6, "n0 time-averaged state");
+        const swarm::core::RouterStats& all = stats.aggregate;
+        NS_TEST_EXPECT_MSG_EQ(all.control.size(), 2u, "two kinds");
+        NS_TEST_EXPECT_MSG_EQ(all.control.at(kHello).txPackets, 3u, "three hellos sent");
+        NS_TEST_EXPECT_MSG_EQ(all.control.at(kHello).rxPackets, 4u, "four hellos heard");
+        NS_TEST_EXPECT_MSG_EQ(all.control.at(kHello).rxBytes, 16u, "hello bytes heard");
+        NS_TEST_EXPECT_MSG_EQ(all.control.at(kMessage).rxPackets, 1u, "the message heard");
+        NS_TEST_EXPECT_MSG_EQ(all.decisions(RouteAction::Unicast), 2u, "two forwards");
+        NS_TEST_EXPECT_MSG_EQ(all.decisions(RouteAction::Deliver), 1u, "one delivery");
+        NS_TEST_EXPECT_MSG_EQ(all.decisions(RouteAction::Drop), 0u, "no drop");
+
+        // Kind names, registered once per protocol.
+        SwarmRoutingHelper toy("ns3::swarmtest::ToyProtocol");
+        toy.SetKindNames(kToyKinds);
+        NS_TEST_EXPECT_MSG_EQ(Toy(n0)->KindName(kHello), std::string("HELLO"), "named kind");
+        NS_TEST_EXPECT_MSG_EQ(toy.KindName(kMessage), std::string("MSG"),
+                              "named through the helper");
+        NS_TEST_EXPECT_MSG_EQ(Toy(n0)->KindName(9), std::string("9"),
+                              "an unnamed kind prints its number");
+        NS_TEST_EXPECT_MSG_EQ(SwarmRoutingBase::GetKindName(SwarmRoutingBase::GetTypeId(), kHello),
+                              std::string("1"), "names belong to their protocol");
+        // A parent's names reach its children; a null name is skipped.
+        const std::array<swarm::core::KindName, 2> baseKinds{{{7, "BASE"}, {8, nullptr}}};
+        SwarmRoutingBase::SetKindNames(SwarmRoutingBase::GetTypeId(), baseKinds);
+        NS_TEST_EXPECT_MSG_EQ(Toy(n0)->KindName(7), std::string("BASE"), "inherited name");
+        NS_TEST_EXPECT_MSG_EQ(Toy(n0)->KindName(8), std::string("8"), "null name skipped");
+        NS_TEST_EXPECT_MSG_EQ(Toy(n0)->KindName(kHello), std::string("HELLO"), "own name first");
+        SwarmRoutingBase::SetKindNames(SwarmRoutingBase::GetTypeId(), {});
+        NS_TEST_EXPECT_MSG_EQ(Toy(n0)->KindName(7), std::string("7"), "names replaced");
+
+        Toy(n0)->ResetRouterStats();
+        NS_TEST_EXPECT_MSG_EQ(Toy(n0)->GetRouterStats().control.empty(), true, "reset");
+        Simulator::Destroy();
+    }
+};
+
 // --- IslLinkMonitor ----------------------------------------------------------------
 
 class IslMonitorTestCase : public TestCase {
@@ -627,7 +814,10 @@ private:
 /// hellos and jittered discovery (both drawn from the Rng port), energy
 /// sources on every node, and two flows to n2. Returns everything observable:
 /// the data received and every control message, with times.
-std::string RunDeterminismScenario(uint32_t seed, bool monitors) {
+/// `observe` connects every observer trace source and reads the counters
+/// mid-run; what it sees goes to `observed`, never into the returned output.
+std::string RunDeterminismScenario(uint32_t seed, bool monitors, bool observe = false,
+                                   std::string* observed = nullptr) {
     SwarmCoreSeed(seed);
     NodeContainer nodes;
     nodes.Create(3);
@@ -679,8 +869,26 @@ std::string RunDeterminismScenario(uint32_t seed, bool monitors) {
             });
         }
     }
+    std::vector<std::string> traces;
+    if (observe) {
+        for (uint32_t i = 0; i < 3; ++i) {
+            ConnectObserverTraces(Toy(nodes.Get(i)), &traces);
+        }
+        for (int t = 1; t <= 4; ++t) {
+            Simulator::Schedule(Seconds(t), [&nodes, &traces]() {
+                const SwarmRoutingStats s = SwarmRoutingHelper::CollectStats(nodes);
+                traces.push_back("stats " + std::to_string(s.aggregate.routeAdds) + " " +
+                                 std::to_string(s.aggregate.peakStateEntries));
+            });
+        }
+    }
     Simulator::Stop(Seconds(5));
     Simulator::Run();
+    if (observed) {
+        for (const auto& l : traces) {
+            *observed += l + "\n";
+        }
+    }
     std::ostringstream out;
     for (const auto& l : rx) {
         out << "rx " << l << "\n";
@@ -697,7 +905,8 @@ std::string RunDeterminismScenario(uint32_t seed, bool monitors) {
 class DeterminismTestCase : public TestCase {
 public:
     DeterminismTestCase()
-        : TestCase("glue: same seed, byte-identical output with and without the monitors") {}
+        : TestCase("glue: same seed, byte-identical output with and without the monitors and the "
+                   "observer") {}
 
 private:
     void DoRun() override {
@@ -705,6 +914,10 @@ private:
         const std::string with = RunDeterminismScenario(1, true);
         const std::string again = RunDeterminismScenario(1, true);
         const std::string other = RunDeterminismScenario(2, true);
+        std::string observed;
+        std::string observedAgain;
+        const std::string withObserver = RunDeterminismScenario(1, true, true, &observed);
+        RunDeterminismScenario(1, true, true, &observedAgain);
         std::istringstream lines(without);
         uint32_t delivered = 0;
         for (std::string l; std::getline(lines, l);) {
@@ -716,6 +929,9 @@ private:
         NS_TEST_EXPECT_MSG_EQ(with, without, "monitors attached: identical output");
         NS_TEST_EXPECT_MSG_EQ(again, with, "same seed: identical output");
         NS_TEST_EXPECT_MSG_NE(other, with, "another seed: other output (the log sees the seed)");
+        NS_TEST_EXPECT_MSG_EQ(withObserver, with, "observer traces and counters read: identical");
+        NS_TEST_EXPECT_MSG_NE(observed.find("route "), std::string::npos, "the observer saw it");
+        NS_TEST_EXPECT_MSG_EQ(observedAgain, observed, "same seed: identical observer output");
     }
 };
 
@@ -724,7 +940,7 @@ private:
 std::vector<TestCase*> MakeGlueTestCases() {
     return {new PortsTestCase,      new DeferredQueueTestCase, new RoutingBaseTestCase,
             new IslMonitorTestCase, new WifiMonitorTestCase,   new EnergyHookTestCase,
-            new DeterminismTestCase};
+            new ObserverTestCase,   new DeterminismTestCase};
 }
 
 }  // namespace ns3::swarmtest

@@ -1,0 +1,30 @@
+# Managed by swarm-routing/.github tools/org-sync: edit templates/workflows/scorecard.yml there.
+name: Scorecard
+
+# OpenSSF Scorecard (swarm-routing/.github#23): a report, never a gate. The
+# score and the README badge come from the public OpenSSF API.
+on:
+  # weekly: Scorecard retunes its checks with no push here
+  schedule:
+    - cron: '23 6 * * 1'
+  push:
+    branches: [main]
+  # the first score, without waiting for Monday
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+# a superseded run is not cancelled: a cancelled publish is worse than a duplicate
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  analysis:
+    permissions:
+      security-events: write
+      id-token: write
+      contents: read
+      actions: read
+    uses: swarm-routing/.github/.github/workflows/reusable-scorecard.yml@main

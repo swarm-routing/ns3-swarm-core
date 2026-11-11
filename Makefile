@@ -45,7 +45,7 @@ org-tools:  # the same templates CI checks against: refreshed to ORG_REF every t
 	@git -C "$(ORG_DIR)" fetch -q --depth 1 origin $(ORG_REF) && git -C "$(ORG_DIR)" checkout -q --detach FETCH_HEAD
 
 headers: org-tools ## licence headers (org rule 1)
-	python3 -I "$(ORG_DIR)/tools/checks/check-headers.py" --dual core/ --dual tools/ --core core/ .
+	python3 -I "$(ORG_DIR)/tools/checks/check-headers.py" --dual core/ --dual tools/ --core core/ --exclude '^core/bench/' .
 
 org-sync-check: org-tools ## org-managed files match the org templates
 	python3 -I "$(ORG_DIR)/tools/org-sync/org_sync.py" check .

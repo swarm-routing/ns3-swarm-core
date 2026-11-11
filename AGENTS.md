@@ -22,22 +22,30 @@ CMakeLists.txt      build_lib(LIBNAME swarm-core ...); ns-3 generates ns3/swarm-
 core/               simulator-free primitives, namespace swarm::core — MIT OR GPL-2.0-only, carries core/LICENSE:
                     swarm-types.h, swarm-ports.h (IClock, IRng, INeighborProvider, ITimerScheduler,
                     ILinkState, ILinkQuality, IEnergy), swarm-wire.h (LE WireWriter/WireReader, version byte),
-                    swarm-visited-path.h, swarm-dedup-history.{h,cc}, swarm-pheromone-table.{h,cc},
+                    swarm-visited-path.h, swarm-dedup-history.{h,cc}, swarm-pheromone-table.{h,cc} (flat
+                    per-destination rows: row() views, forEach, bestEntry; #45),
                     swarm-selection.{h,cc} (roulette, evaporationFactor), swarm-route-decision.h,
-                    swarm-link-metric.h (ILinkMetric); CMakeLists.txt builds it alone, no ns-3
+                    swarm-link-metric.h (ILinkMetric), swarm-observer.{h,cc} (IRouterObserver, KindName,
+                    CountingObserver -> RouterStats: bounded counters); CMakeLists.txt builds it alone, no ns-3
 core/test/          the core tests, one function per primitive (MIT OR GPL-2.0-only); run by ctest and by test.py
+core/bench/         dev-only microbenchmarks (MIT OR GPL-2.0-only; Google Benchmark, pinned, -DSWARM_CORE_BENCH=ON;
+                    exempt from the core-include check, as it includes <benchmark/benchmark.h>)
 model/              ns-3 glue — GPL-2.0-only; each file derived from AntHocNet names its source file and commit:
                     swarm-core.h (kSwarmCoreApiVersion, SwarmCoreSeed), swarm-ns3-ports.h (SwarmClock, SwarmRng,
                     SwarmTimerScheduler, address conversion, null ports), swarm-deferred-packet-queue.h
                     (DeferredPacketQueue: MaxPackets 64 / MaxAge 30 s attributes, drop accounting),
-                    swarm-routing-base.h (SwarmRoutingBase: sockets, deferred route, prev-hop tag, ports, Execute),
+                    swarm-routing-base.h (SwarmRoutingBase: sockets, deferred route, prev-hop tag, ports, Execute;
+                    Observer() -> ControlTx/ControlRx/RouteChanged/DataDecision/StateSize trace sources,
+                    GetRouterStats, the kind-name registry SetKindNames/GetKindName),
                     swarm-wifi-link-monitor.h (ILinkState + ILinkQuality + retry-limit LinkFailure),
                     swarm-isl-link-monitor.h (INeighborProvider + ILinkState + LinkChange on p2p),
                     swarm-energy-metric-hook.h (IEnergy from an EnergySource's RemainingEnergy trace)
-helper/             swarm-routing-helper.h: SwarmRoutingHelper (one-call Install, AssignStreams), SwarmMonitorHelper
+helper/             swarm-routing-helper.h: SwarmRoutingHelper (one-call Install, AssignStreams, SetKindNames,
+                    CollectStats -> SwarmRoutingStats), SwarmMonitorHelper
 test/               swarm-core test suite: wraps every core/test/ function as a TestCase, plus the glue's
                     (swarm-glue-tests.cc: a toy protocol on the base, a 2-3 node scenario per monitor, and
-                    same-seed byte-identical output with and without every monitor)
+                    the router observer's trace sources and counters, same-seed byte-identical output
+                    with and without every monitor and the observer)
 examples/           swarm-core-seed: the determinism gate's program (seeded draws + a roulette sequence through IRng)
 tools/release/      dist.sh: the release asset (swarm-core-<ver>.tar.gz), checked in a clean ns3-dev tree; `make dist` — MIT OR GPL-2.0-only
 .cz.toml, VERSION   Commitizen config and the version it bumps; releases run through release.yml
@@ -66,6 +74,15 @@ docker run --rm -v "$PWD:/src/swarm-core:ro" ghcr.io/swarm-routing/ns3-dev:lates
 
 ```bash
 cmake -S core -B build/core && cmake --build build/core && ctest --test-dir build/core
+```
+
+Microbenchmarks of the per-packet primitives (`core/bench/`, dev-only; fetches
+Google Benchmark at the commit and hash pinned in `core/CMakeLists.txt`; CI
+builds and runs them once per PR, report-only, swarm-routing/.github#32):
+
+```bash
+cmake -S core -B build/bench -DCMAKE_BUILD_TYPE=Release -DSWARM_CORE_BENCH=ON
+cmake --build build/bench --target swarm_core_bench && build/bench/swarm_core_bench
 ```
 
 Automatic runs (push, PR: `latest`) must pass `test.py -s swarm-core` on debug
@@ -100,16 +117,21 @@ Org-wide (1–9), then this repo's own.
    `.h`/`.hpp`/`.cc`/`.cpp`/`.py`/`.sh` starts with
    `// Copyright (c) 2026 Daniel Joppi (https://github.com/swarm-routing)` +
    `// SPDX-License-Identifier: <MIT OR GPL-2.0-only | GPL-2.0-only>` (`#`
-   comments where needed), matching its directory in `LICENSING.md`. CI
-   (`reusable-licence-check.yml`) checks it. A new directory gets its row in
-   `LICENSING.md` in the same PR.
+   comments where needed), matching its directory in `LICENSING.md`; an
+   outside contributor may add their own `Copyright (c) <year> <Name>` line
+   beneath the org line, never replace it, and signs off every commit (DCO,
+   CONTRIBUTING "Outside contributions"). CI (`reusable-licence-check.yml`)
+   checks it. A new directory gets its row in `LICENSING.md` in the same PR.
 2. **The licence boundary only goes one way.** GPL code may use the dual
    parts; dual code never pulls GPL-only code in: a `core/` file includes only
    the C++ standard library, other `core/` files and the dual-licensed `core/`
-   of a dependency pinned by commit and declared in the repo's `licence.yml`
-   `core-deps`, with `core-roots` naming the repo's own `core/` (without it
-   the check skips core includes; a protocol's `core/` on swarm-core's; CI
-   checks it, `check-headers.py --core-dep`), and a dual script imports no GPL-only code. Code coming from AntHocNet keeps its
+   of a dependency pinned by commit and declared as the `core-deps` input of
+   every workflow that runs the licence check (one calling
+   `reusable-licence-check.yml`, or one calling `reusable-ns3-ci.yml`, which
+   forwards it; workflow file names differ per repo), each with the same pin,
+   with `core-roots` naming the repo's own `core/`
+   (without it the check skips core includes; a protocol's `core/` on
+   swarm-core's; CI checks it, `check-headers.py --core-dep`), and a dual script imports no GPL-only code. Code coming from AntHocNet keeps its
    licence: its `core/`/`tools/` (dual) may land in dual or GPL paths here; its
    `ns3/` modules and `web/` (GPL-2.0-only) only in GPL paths. Third-party code
    (AntHocNet's vendored `aomdv`/`gpsr`, IITP RAS) lands only in GPL paths with
@@ -203,8 +225,8 @@ Org-wide (1–9), then this repo's own.
   and open PRs; a release is the bump PR from `bot/release`, tagged after it
   merges (CONTRIBUTING "Cutting a release").
 - When a PR falls behind `main`, update it
-  (`gh api -X PUT repos/<owner>/<repo>/pulls/<n>/update-branch`) and merge PRs
-  one at a time, each after its CI on the updated branch. Never force-push a
+  (`gh api -X PUT "repos/<owner>/<repo>/pulls/<n>/update-branch"`, with
+  `<owner>/<repo>` the PR's base repository and `<n>` its number) and merge PRs one at a time, each after its CI on the updated branch. Never force-push a
   branch someone else pushed. A behind `bot/release` PR is the exception:
   dispatch the release `bump` again, so the version and changelog are rebuilt
   on the new `main`.
@@ -261,6 +283,7 @@ here is undone by the next `org_sync.py apply`).
 |--------------|-------|
 | Source of the primitives | AntHocNet `core/include/anthocnet/core/`, `core/src/` (MIT OR GPL-2.0-only → `core/` here); each `core/` file names its source file and commit |
 | Use or extend a primitive | `core/swarm-*.h` (the API, documented in place), its test in `core/test/`, the list in `core/test/all-tests.cc` |
+| Report a protocol's internals (control by kind, route changes, data decisions, state footprint) | its core calls `swarm::core::IRouterObserver` (`core/swarm-observer.h`), the adapter passes `&Observer()` and registers its `KindName` table; read with the trace sources or `SwarmRoutingHelper::CollectStats` (#42; consumer: swarm-routing/ns3-tools#91) |
 | Write a protocol's ns-3 adapter | derive from `SwarmRoutingBase` (`model/swarm-routing-base.h`: the hooks, services and ports), install with `SwarmRoutingHelper`; the toy protocol in `test/swarm-glue-tests.cc` is a minimal example |
 | Source of the glue | AntHocNet `ns3/baselines/adaptive/model/adaptive-routing-base.*`, `ns3/anthocnet/model/anthocnet-{adapters,rqueue,routing-protocol}.*` (GPL-2.0-only → `model/` here) |
 | Wire-format discipline | AntHocNet `docs/wire-format.md`, ADR-0006 |

@@ -92,4 +92,23 @@ int64_t SwarmRoutingHelper::AssignStreams(const NodeContainer& nodes, int64_t st
     return used;
 }
 
+void SwarmRoutingHelper::SetKindNames(std::span<const swarm::core::KindName> names) const {
+    SwarmRoutingBase::SetKindNames(m_factory.GetTypeId(), names);
+}
+
+std::string SwarmRoutingHelper::KindName(uint8_t kind) const {
+    return SwarmRoutingBase::GetKindName(m_factory.GetTypeId(), kind);
+}
+
+SwarmRoutingStats SwarmRoutingHelper::CollectStats(const NodeContainer& nodes) {
+    SwarmRoutingStats out;
+    for (auto it = nodes.Begin(); it != nodes.End(); ++it) {
+        if (Ptr<SwarmRoutingBase> protocol = (*it)->GetObject<SwarmRoutingBase>()) {
+            out.perNode.emplace_back((*it)->GetId(), protocol->GetRouterStats());
+            out.aggregate.merge(out.perNode.back().second);
+        }
+    }
+    return out;
+}
+
 }  // namespace ns3
