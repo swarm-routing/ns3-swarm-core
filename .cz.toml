@@ -1,0 +1,14 @@
+# Copyright (c) 2026 Daniel Joppi (https://github.com/swarm-routing)
+# SPDX-License-Identifier: GPL-2.0-only
+# Releases go through swarm-routing/.github's reusable-release.yml
+# (.github/workflows/release.yml; CONTRIBUTING "Cutting a release" there).
+# The first release is v0.1.0; Commitizen then bumps from the Conventional
+# Commits since the last tag and rewrites the files below.
+[tool.commitizen]
+name = "cz_conventional_commits"
+version = "0.0.0"
+version_scheme = "semver"
+tag_format = "v$version"
+major_version_zero = true
+update_changelog_on_bump = true
+version_files = ["VERSION", "CITATION.cff:^version:"]

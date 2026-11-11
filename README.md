@@ -2,6 +2,7 @@
 
 <!-- org-sync:begin badges -->
 [![CI](https://github.com/swarm-routing/ns3-swarm-core/actions/workflows/ci.yml/badge.svg)](https://github.com/swarm-routing/ns3-swarm-core/actions/workflows/ci.yml)
+[![Release](https://img.shields.io/github/v/release/swarm-routing/ns3-swarm-core?sort=semver&cacheSeconds=1800)](https://github.com/swarm-routing/ns3-swarm-core/releases)
 [![Cite](https://img.shields.io/badge/cite-CITATION.cff-blue)](CITATION.cff)
 [![Licence: GPL-2.0-only, core/ tools/ MIT OR GPL-2.0-only](https://img.shields.io/badge/licence-GPL--2.0--only%2C%20core%2F%20tools%2F%20MIT%20OR%20GPL--2.0--only-blue)](LICENSING.md)
 [![Conventional Commits](https://img.shields.io/badge/Conventional%20Commits-1.0.0-yellow)](https://www.conventionalcommits.org)
