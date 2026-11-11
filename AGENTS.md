@@ -283,9 +283,9 @@ Code says the plugin is missing (it was called
 
 A skill only this repository uses lives in its own `.claude/skills/`; a skill
 two repositories need moves to the plugin. Skills that file, cite and extract
-papers into the private papers library stay in `swarm-routing/papers`; finding
+papers stay in a private library the maintainer keeps; finding
 new papers and confirming a reference is public (`lit-search`). A public skill
-may point to the papers skills, never carry library content. This section is managed by org-sync: add
+may point to that library's skills, never carry its content. This section is managed by org-sync: add
 a row in `swarm-routing/.github` `templates/agents/skills.md`, not here (an edit
 here is undone by the next `org_sync.py apply`).
 <!-- org-sync:end skills -->
