@@ -3,6 +3,7 @@ name: org-sync
 
 on:
   pull_request:
+  merge_group:  # the merge queue runs the required checks on each group (#130)
   push:
     branches: [main]
 
