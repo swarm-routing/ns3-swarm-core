@@ -37,8 +37,9 @@ reviews:
         (https://github.com/swarm-routing)` and an SPDX-License-Identifier that
         matches its directory's row in LICENSING.md: `MIT OR GPL-2.0-only` for a
         simulator-free core/ and standalone tooling, `GPL-2.0-only` for ns-3 modules,
-        the site, docs and data. A new directory needs its LICENSING.md row in the
-        same PR. Dual-licensed code must never include or import GPL-only code. Flag
+        the site, docs and data. An outside contributor may add their own
+        `Copyright (c) <year> <Name>` line beneath the org line (never instead of
+        it). A new directory needs its LICENSING.md row in the same PR. Dual-licensed code must never include or import GPL-only code. Flag
         any code that looks copied from ns-3's src/aodv or src/olsr.
     - path: ".github/workflows/**"
       instructions: >-
