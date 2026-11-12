@@ -171,13 +171,15 @@ protected:
     virtual void OnDataForwarded(Ptr<const Packet> /*p*/, const Ipv4Header& /*header*/,
                                  Ipv4Address /*next*/) {}
 
-    /// The link to `neighbor` failed (MAC retry limit, or its interface went down).
+    /// The link to `neighbor` failed (MAC retry limit, or its interface went
+    /// down).
     virtual void OnLinkFailure(Ipv4Address /*neighbor*/) {}
 
     /// A point-to-point link to `neighbor` came up.
     virtual void OnLinkUp(Ipv4Address /*neighbor*/) {}
 
-    // --- services ----------------------------------------------------------------
+    // --- services
+    // ----------------------------------------------------------------
 
     /// One-hop broadcast of a control message on every interface.
     void BroadcastControl(Ptr<Packet> p);
@@ -191,6 +193,14 @@ protected:
     void ReleaseDeferred(Ipv4Address dst);
     /// Drops every held packet to `dst` (a core's DiscardPending).
     void DiscardDeferred(Ipv4Address dst);
+    /// Holds a data packet RouteInput has no next hop for, then calls
+    /// StartDiscovery(dst). The packet is held as given, so a protocol header
+    /// the adapter put on it stays on: an adapter that overrides RouteInput
+    /// (Termite's, whose header rides on every data packet) holds its packets
+    /// here too. ReleaseDeferred hands it, unchanged, to SelectNextHop,
+    /// OnDataForwarded and ForwardData (swarm-routing/ns3-swarm-core#40).
+    void Defer(Ptr<const Packet> p, const Ipv4Header& header, const UnicastForwardCallback& ucb,
+               const ErrorCallback& ecb);
 
     /// Carries out the decisions a core returns that need no data packet in
     /// hand: Unicast and Broadcast of a control message (`encode` turns the
@@ -247,8 +257,6 @@ private:
     Ptr<Ipv4Route> LoopbackRoute(const Ipv4Header& header, Ptr<NetDevice> oif) const;
     Ptr<Ipv4Route> DirectRoute(Ipv4Address dst, Ipv4Address next, Ipv4Address src) const;
     int32_t InterfaceTowards(Ipv4Address next) const;
-    void Defer(Ptr<const Packet> p, const Ipv4Header& header, const UnicastForwardCallback& ucb,
-               const ErrorCallback& ecb);
     void PurgeTick();
     void RecvSocket(Ptr<Socket> socket);
     void WifiLinkFailed(Ipv4Address neighbor, Mac48Address mac);
