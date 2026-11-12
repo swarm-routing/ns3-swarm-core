@@ -186,9 +186,11 @@ Org-wide (1–9), then this repo's own.
   gates the issue: that label set is the version's scope,
   and the version is released when its issues are done (CONTRIBUTING
   "Cutting a release"). Labels come from `labels.json` via the `sync-labels`
-  workflow, the shared `release:v0.1.0` to `release:v1.0.0` among them; a
-  version outside that set is added to `labels.json` (and CONTRIBUTING's
-  label table) when a ladder needs it,
+  workflow, the shared `release:v0.1.0` to `release:v0.4.0` and
+  `release:v1.0.0` among them; a version outside that set is added to
+  `swarm-routing/.github`'s `labels.json` (and CONTRIBUTING's label table)
+  when a ladder needs it, and reaches a repository when its `sync-labels` runs
+  (monthly, or dispatched after the change merges),
   or, in a repository that keeps its own release labels (AntHocNet), created
   there with `gh label create release:vX.Y.Z` when its ladder adds the version.
 - Issue bodies: **Context** (evidence, numbers, links) · **Scope** ·
@@ -284,6 +286,7 @@ Code says the plugin is missing (it was called
 | Check a diff against the org golden rules before a PR or a review | `swarm-routing/.github` `tools/protocol-review/check_invariants.py` | `protocol-review` |
 | Bring the README, AGENTS/CLAUDE/CONTEXT and docs/ to the org documentation standard | `swarm-routing/.github` `tools/docs-review/check_docs.py` | `docs-review` |
 | Find new papers on a topic, or confirm a reference (Crossref, Semantic Scholar, OpenAlex; free sources only) | `swarm-routing/.github` `tools/lit-search/lit_search.py` | `lit-search` |
+| Measure what a Claude Code session loads from the agent files (`CLAUDE.md` and its `@` imports, or `AGENTS.md` alone), or where a finished Claude Code session's tokens went, before cutting or adding agent text | `swarm-routing/skills` `tools/token-audit/token_audit.py` | `token-audit` |
 
 A skill only this repository uses lives in its own `.claude/skills/`; a skill
 two repositories need moves to the plugin. Skills that file, cite and extract
