@@ -59,6 +59,10 @@ because the issue threads were thorough. Caveman the chat, not the record.
   acceptance criteria remain open.
 - Before saying a tool or check is missing, look at `main` (`git fetch`,
   `origin/main`), not a stale local checkout.
+- Change text inside `org-sync:begin/end` markers only through the template
+  in `swarm-routing/.github` `templates/`: one PR there, then org-bot's
+  `bot/org-sync` refresh PR in each repository. A hand edit per repository
+  stays red on `check / org-sync` (swarm-routing/.github#236).
 - In a repository with a merge queue, merge by enabling auto-merge (squash);
   a direct merge (`PUT pulls/<n>/merge`) is refused with HTTP 405. Only the
   required checks (`gh api repos/<owner>/<repo>/rules/branches/main`) gate a
