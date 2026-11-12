@@ -25,6 +25,7 @@
 #include "ns3/socket.h"
 #include "ns3/string.h"
 #include "ns3/swarm-core-module.h"
+#include "ns3/tag.h"
 #include "ns3/udp-socket-factory.h"
 #include "ns3/uinteger.h"
 #include "ns3/wifi-helper.h"
@@ -48,7 +49,31 @@ constexpr uint8_t kHello = 1;
 constexpr uint8_t kMessage = 2;
 constexpr std::array<swarm::core::KindName, 2> kToyKinds{{{kHello, "HELLO"}, {kMessage, "MSG"}}};
 
-// --- a toy protocol: static next hops, learned after a "discovery" delay ------
+/// A mark an adapter puts on a packet (a test stand-in for a protocol header
+/// that rides on data packets). ns-3's IP layer leaves an unknown tag alone.
+class MarkTag : public Tag {
+public:
+    static TypeId GetTypeId() {
+        static TypeId tid = TypeId("ns3::swarmtest::MarkTag")
+                                .SetParent<Tag>()
+                                .SetGroupName("SwarmCore")
+                                .AddConstructor<MarkTag>();
+        return tid;
+    }
+
+    TypeId GetInstanceTypeId() const override { return GetTypeId(); }
+
+    uint32_t GetSerializedSize() const override { return 0; }
+
+    void Serialize(TagBuffer) const override {}
+
+    void Deserialize(TagBuffer) override {}
+
+    void Print(std::ostream& os) const override { os << "mark"; }
+};
+
+// --- a toy protocol: static next hops, learned after a "discovery" delay
+// ------
 
 /// A SwarmRoutingBase with no routing logic: next hops come from a table the
 /// test fills; a route in `pending` is learned `discoveryDelay` (plus a jitter
@@ -69,6 +94,10 @@ public:
     std::vector<Ipv4Address> failures;
     std::vector<Ipv4Address> ups;
     uint32_t discoveries = 0;
+    /// A relay that holds every transit packet through Defer with a mark on
+    /// it, as an adapter overriding RouteInput would (#40).
+    bool holdMarked = false;
+    std::vector<bool> markedFrom;  ///< per data packet seen: did it carry the mark?
 
     void SendHelloNow() {
         BroadcastControl(Create<Packet>(4));
@@ -132,8 +161,10 @@ protected:
         Observer().onControlReceived(p->GetSize() == 4 ? kHello : kMessage, p->GetSize());
     }
 
-    bool OnDataReceived(Ptr<const Packet>, const Ipv4Header& header, Ipv4Address prev) override {
+    bool OnDataReceived(Ptr<const Packet> p, const Ipv4Header& header, Ipv4Address prev) override {
         dataFrom.push_back(prev);
+        MarkTag mark;
+        markedFrom.push_back(p->PeekPacketTag(mark));
         if (IsMyAddress(header.GetDestination())) {
             Observer().onDataDecision(ToNodeAddress(header.GetDestination()),
                                       swarm::core::RouteAction::Deliver);
@@ -144,6 +175,19 @@ protected:
     void OnDataForwarded(Ptr<const Packet>, const Ipv4Header& header, Ipv4Address) override {
         Observer().onDataDecision(ToNodeAddress(header.GetDestination()),
                                   swarm::core::RouteAction::Unicast);
+    }
+
+    bool RouteInput(Ptr<const Packet> p, const Ipv4Header& header, Ptr<const NetDevice> idev,
+                    const UnicastForwardCallback& ucb, const MulticastForwardCallback& mcb,
+                    const LocalDeliverCallback& lcb, const ErrorCallback& ecb) override {
+        const Ipv4Address dst = header.GetDestination();
+        if (holdMarked && !IsMyAddress(dst) && !dst.IsBroadcast() && !dst.IsMulticast()) {
+            Ptr<Packet> q = p->Copy();
+            q->AddPacketTag(MarkTag());
+            Defer(q, header, ucb, ecb);
+            return true;
+        }
+        return SwarmRoutingBase::RouteInput(p, header, idev, ucb, mcb, lcb, ecb);
     }
 
     void OnLinkFailure(Ipv4Address neighbor) override { failures.push_back(neighbor); }
@@ -233,7 +277,8 @@ struct Line {
     }
 };
 
-// --- the ports ------------------------------------------------------------------
+// --- the ports
+// ------------------------------------------------------------------
 
 class PortsTestCase : public TestCase {
 public:
@@ -286,12 +331,14 @@ private:
     }
 };
 
-// --- DeferredPacketQueue -----------------------------------------------------------
+// --- DeferredPacketQueue
+// -----------------------------------------------------------
 
 class DeferredQueueTestCase : public TestCase {
 public:
     DeferredQueueTestCase()
-        : TestCase("glue: DeferredPacketQueue bounded by size and age, drops accounted") {}
+        : TestCase("glue: DeferredPacketQueue bounded by size and age, drops "
+                   "accounted") {}
 
 private:
     static DeferredPacket Entry(Ipv4Address dst) {
@@ -360,12 +407,14 @@ private:
     }
 };
 
-// --- SwarmRoutingBase -------------------------------------------------------------
+// --- SwarmRoutingBase
+// -------------------------------------------------------------
 
 class RoutingBaseTestCase : public TestCase {
 public:
     RoutingBaseTestCase()
-        : TestCase("glue: SwarmRoutingBase defers, releases, forwards, carries control") {}
+        : TestCase("glue: SwarmRoutingBase defers, releases, forwards, carries "
+                   "control") {}
 
 private:
     void DoRun() override {
@@ -422,7 +471,49 @@ private:
     }
 };
 
-// --- the router observer -------------------------------------------------------------
+/// An adapter that overrides RouteInput holds a transit packet through the
+/// protected Defer, as given (Termite's header stays on), and the base
+/// releases it unchanged once the route is learned (#40).
+class DeferFromAdapterTestCase : public TestCase {
+public:
+    DeferFromAdapterTestCase()
+        : TestCase("glue: an adapter's RouteInput holds a packet through Defer, "
+                   "as given") {}
+
+private:
+    void DoRun() override {
+        SwarmCoreSeed(1);
+        Line line("10Mbps");
+        Ptr<Node> n0 = line.nodes.Get(0);
+        Ptr<Node> n1 = line.nodes.Get(1);
+        Ptr<Node> n2 = line.nodes.Get(2);
+        const Ipv4Address n1a = Addr(n1, 1);
+        const Ipv4Address n2a = Addr(n2, 1);
+        Toy(n0)->routes[n2a] = n1a;
+        Toy(n1)->pending[n2a] = n2a;  // learned 0.5 s after the relay's discovery
+        Toy(n1)->holdMarked = true;
+
+        std::vector<std::string> rx;
+        Ptr<Socket> sink = Sink(n2, &rx);
+        Ptr<Socket> src = Source(n0);
+        Simulator::Schedule(Seconds(1.0), [&]() { SendUdp(src, n2a, 100); });
+        Simulator::Stop(Seconds(3));
+        Simulator::Run();
+
+        Ptr<DeferredPacketQueue> q = Toy(n1)->GetDeferredQueue();
+        NS_TEST_EXPECT_MSG_EQ(q->Stats().enqueued, 1u, "the relay held the packet");
+        NS_TEST_EXPECT_MSG_EQ(q->Stats().released, 1u, "and released it");
+        NS_TEST_EXPECT_MSG_EQ(Toy(n1)->discoveries, 1u, "Defer started the relay's discovery");
+        NS_TEST_EXPECT_MSG_EQ(rx.size(), 1u, "the held packet reached the destination");
+        NS_TEST_ASSERT_MSG_EQ(Toy(n2)->markedFrom.size(), 1u, "n2 saw the data packet");
+        NS_TEST_EXPECT_MSG_EQ(Toy(n2)->markedFrom[0], true,
+                              "what the adapter put on the packet was released with it");
+        Simulator::Destroy();
+    }
+};
+
+// --- the router observer
+// -------------------------------------------------------------
 
 /// Appends one line per trace-source event to `log`.
 void ConnectObserverTraces(Ptr<SwarmRoutingBase> p, std::vector<std::string>* log) {
@@ -583,12 +674,14 @@ private:
     }
 };
 
-// --- IslLinkMonitor ----------------------------------------------------------------
+// --- IslLinkMonitor
+// ----------------------------------------------------------------
 
 class IslMonitorTestCase : public TestCase {
 public:
     IslMonitorTestCase()
-        : TestCase("glue: IslLinkMonitor neighbours, queue, service time, link down and up") {}
+        : TestCase("glue: IslLinkMonitor neighbours, queue, service time, link "
+                   "down and up") {}
 
 private:
     void DoRun() override {
@@ -663,7 +756,8 @@ private:
     }
 };
 
-// --- wifi -----------------------------------------------------------------------------
+// --- wifi
+// -----------------------------------------------------------------------------
 
 /// Ad hoc 802.11a at a fixed 6 Mb/s, nodes on a line `spacing` metres apart.
 NetDeviceContainer AdhocWifi(NodeContainer& nodes, double spacing) {
@@ -691,7 +785,8 @@ NetDeviceContainer AdhocWifi(NodeContainer& nodes, double spacing) {
 class WifiMonitorTestCase : public TestCase {
 public:
     WifiMonitorTestCase()
-        : TestCase("glue: WifiLinkMonitor backlog, service time, SINR, retry-limit failure") {}
+        : TestCase("glue: WifiLinkMonitor backlog, service time, SINR, "
+                   "retry-limit failure") {}
 
 private:
     void DoRun() override {
@@ -763,12 +858,14 @@ private:
     }
 };
 
-// --- EnergyMetricHook ----------------------------------------------------------------
+// --- EnergyMetricHook
+// ----------------------------------------------------------------
 
 class EnergyHookTestCase : public TestCase {
 public:
     EnergyHookTestCase()
-        : TestCase("glue: EnergyMetricHook residual fraction from the source's trace") {}
+        : TestCase("glue: EnergyMetricHook residual fraction from the source's "
+                   "trace") {}
 
 private:
     void DoRun() override {
@@ -808,7 +905,8 @@ private:
     }
 };
 
-// --- determinism ---------------------------------------------------------------------
+// --- determinism
+// ---------------------------------------------------------------------
 
 /// Three wifi nodes in range of each other, the toy protocol with jittered
 /// hellos and jittered discovery (both drawn from the Rng port), energy
@@ -905,7 +1003,8 @@ std::string RunDeterminismScenario(uint32_t seed, bool monitors, bool observe = 
 class DeterminismTestCase : public TestCase {
 public:
     DeterminismTestCase()
-        : TestCase("glue: same seed, byte-identical output with and without the monitors and the "
+        : TestCase("glue: same seed, byte-identical output with and without the "
+                   "monitors and the "
                    "observer") {}
 
 private:
@@ -938,9 +1037,11 @@ private:
 }  // namespace
 
 std::vector<TestCase*> MakeGlueTestCases() {
-    return {new PortsTestCase,      new DeferredQueueTestCase, new RoutingBaseTestCase,
-            new IslMonitorTestCase, new WifiMonitorTestCase,   new EnergyHookTestCase,
-            new ObserverTestCase,   new DeterminismTestCase};
+    return {new PortsTestCase,       new DeferredQueueTestCase,
+            new RoutingBaseTestCase, new DeferFromAdapterTestCase,
+            new IslMonitorTestCase,  new WifiMonitorTestCase,
+            new EnergyHookTestCase,  new ObserverTestCase,
+            new DeterminismTestCase};
 }
 
 }  // namespace ns3::swarmtest
