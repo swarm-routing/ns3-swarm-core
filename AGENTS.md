@@ -220,7 +220,7 @@ Org-wide (1–9), then this repo's own.
   `python3 tools/epics/epics.py roadmap ROADMAP.md` and
   `python3 tools/epics/epics.py profile profile/README.md` in `.github`. Never
   edit a generated section by hand; the weekly `epics` workflow in `.github`
-  only reports drift. Private repositories (such as `papers`) are never listed
+  only reports drift. Private repositories are never listed
   and keep no generated section.
 - Make minimal, reviewable changes; update the relevant doc/ADR when you change
   a documented decision.
