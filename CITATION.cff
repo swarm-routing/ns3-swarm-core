@@ -38,7 +38,7 @@ references:
       name: "Zenodo"
     doi: "10.5281/zenodo.20981979"
     notes: "The source of the primitives in core/ and the ns-3 glue in model/: each file names its AntHocNet source and commit."
-  - type: conference-paper
+  - type: book
     title: "AntHocNet: An Ant-Based Hybrid Routing Algorithm for Mobile Ad Hoc Networks"
     authors:
       - family-names: "Di Caro"
@@ -48,11 +48,25 @@ references:
       - family-names: "Gambardella"
         given-names: "Luca Maria"
     collection-title: "Parallel Problem Solving from Nature - PPSN VIII"
-    collection-type: proceedings
     start: "461"
     end: "470"
     year: 2004
     publisher:
       name: "Springer Berlin Heidelberg"
     doi: "10.1007/978-3-540-30217-9_47"
-    notes: "The algorithm the shared primitives were first written for."
+    notes: "The algorithm the primitives in core/ were extracted from: the pheromone table, its evaporation and the roulette next-hop selection follow it."
+  - type: book
+    title: "The ns-3 Network Simulator"
+    authors:
+      - family-names: "Riley"
+        given-names: "George F."
+      - family-names: "Henderson"
+        given-names: "Thomas R."
+    collection-title: "Modeling and Tools for Network Simulation"
+    start: "15"
+    end: "34"
+    year: 2010
+    publisher:
+      name: "Springer Berlin Heidelberg"
+    doi: "10.1007/978-3-642-12331-3_2"
+    notes: "The simulator the glue in model/ and helper/ is written for."
