@@ -37,6 +37,21 @@ Condensed from [andrej-karpathy-skills](https://github.com/forrestchang/andrej-k
 - **Verifiable goals:** a bug gets a reproducing test first; a refactor passes
   before and after. Finish when the check passes, not when the code looks right.
 
+## Session habits
+
+- **Attach only the repositories the task needs.** Each attached repository's
+  agent files are loaded into every request, whether the task touches it or
+  not.
+- **Start from the record, not from memory:** the newest open `handoff` issue,
+  then the issue's acceptance criteria, then `main`. Check a claim against its
+  source before it goes into an issue or a PR.
+- **Script what repeats.** A check or a lookup run more than a few times
+  becomes a script in `tools/` that prints a summary; the model reads the
+  verdict, not the raw data (AntHocNet ADR-0014).
+- **Measure before cutting or adding agent text:** the `token-audit` skill
+  (`swarm-routing/skills` `tools/token-audit/token_audit.py`) prints what a
+  session loads and where a finished session's tokens went.
+
 ## Response style — caveman (token economy)
 
 Answer in tight, low-filler prose: drop hedging, pleasantries, and preamble; keep
@@ -59,6 +74,14 @@ because the issue threads were thorough. Caveman the chat, not the record.
   acceptance criteria remain open.
 - Before saying a tool or check is missing, look at `main` (`git fetch`,
   `origin/main`), not a stale local checkout.
+- In an issue, PR or comment, write every issue of another repository in
+  full, `swarm-routing/<repo>#N`, also inside a list or a range. A bare `#N`
+  links to the repository the text is in: in
+  `swarm-routing/AntHocNet#65, #151` the second number points at this
+  repository's #151 (swarm-routing/.github#277).
+- A sentence in `ROADMAP.md` or an AGENTS.md that calls an issue done is not
+  evidence: read the issue's acceptance criteria. On 2026-11-12 nine issues
+  described as done had open criteria (swarm-routing/.github#274).
 - Change text inside `org-sync:begin/end` markers only through the template
   in `swarm-routing/.github` `templates/`: one PR there, then org-bot's
   `bot/org-sync` refresh PR in each repository. A hand edit per repository
@@ -71,9 +94,9 @@ because the issue threads were thorough. Caveman the chat, not the record.
   outside contributor's commit still holds the PR until that author signs
   off; on the maintainer's or an agent's commits it is expected
   (swarm-routing/.github#212). `dco` is not a required check and runs on
-  `pull_request` only, so enable auto-merge on an outside contributor's PR
-  only after `dco` passed on its current head, and disable it before pushing
-  to that PR.
+  `pull_request` only, so merge an outside contributor's PR, by auto-merge or
+  directly, only after `dco` passed on the head commit that merges, and
+  disable auto-merge before anyone pushes to that PR.
 - Enable auto-merge only after CodeRabbit has reviewed and its threads are
   resolved: it is not a required check, so auto-merge does not wait for it.
   `python3 -I ../.github/tools/pr-status/pr_status.py wait --review REPO#N`
