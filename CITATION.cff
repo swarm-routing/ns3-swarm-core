@@ -38,7 +38,7 @@ references:
       name: "Zenodo"
     doi: "10.5281/zenodo.20981979"
     notes: "The source of the primitives in core/ and the ns-3 glue in model/: each file names its AntHocNet source and commit."
-  - type: book
+  - type: conference-paper
     title: "AntHocNet: An Ant-Based Hybrid Routing Algorithm for Mobile Ad Hoc Networks"
     authors:
       - family-names: "Di Caro"
@@ -48,6 +48,7 @@ references:
       - family-names: "Gambardella"
         given-names: "Luca Maria"
     collection-title: "Parallel Problem Solving from Nature - PPSN VIII"
+    collection-type: proceedings
     start: "461"
     end: "470"
     year: 2004
