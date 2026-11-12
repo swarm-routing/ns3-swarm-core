@@ -1,0 +1,22 @@
+# Managed by swarm-routing/.github tools/org-sync: edit templates/workflows/review-gate.yml there.
+name: review
+
+# A bounded wait for CodeRabbit's review (swarm-routing/.github#294): the
+# required check `review / coderabbit` passes once CodeRabbit has reviewed the
+# PR, once it says it will not (a skipped review, a rate limit, a used-up
+# quota), for a draft, or 30 minutes after the PR opened (then with one
+# comment asking for the review). Auto-merge and the merge queue wait for it.
+on:
+  pull_request:
+    types: [opened, synchronize, reopened, ready_for_review]
+  merge_group:
+
+permissions: {}
+
+jobs:
+  review:
+    uses: swarm-routing/.github/.github/workflows/reusable-review-gate.yml@main
+    permissions:
+      contents: read
+      checks: read
+      pull-requests: write
