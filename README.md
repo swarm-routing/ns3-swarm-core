@@ -52,7 +52,8 @@ Each release also has its own **version DOI**, listed on [its Zenodo record](htt
 Please also cite the work it builds on:
 
 - D. H. Joppi, *AntHocNet for NS-3*, 2026, [doi:10.5281/zenodo.20981979](https://doi.org/10.5281/zenodo.20981979). The source of the primitives in core/ and the ns-3 glue in model/: each file names its AntHocNet source and commit.
-- G. Di Caro, F. Ducatelle, L. M. Gambardella, *AntHocNet: An Ant-Based Hybrid Routing Algorithm for Mobile Ad Hoc Networks*, Parallel Problem Solving from Nature - PPSN VIII, pp. 461–470, 2004, [doi:10.1007/978-3-540-30217-9_47](https://doi.org/10.1007/978-3-540-30217-9_47). The algorithm the shared primitives were first written for.
+- G. Di Caro, F. Ducatelle, L. M. Gambardella, *AntHocNet: An Ant-Based Hybrid Routing Algorithm for Mobile Ad Hoc Networks*, Parallel Problem Solving from Nature - PPSN VIII, pp. 461–470, 2004, [doi:10.1007/978-3-540-30217-9_47](https://doi.org/10.1007/978-3-540-30217-9_47). The algorithm the primitives in core/ were extracted from: the pheromone table, its evaporation and the roulette next-hop selection follow it.
+- G. F. Riley, T. R. Henderson, *The ns-3 Network Simulator*, Modeling and Tools for Network Simulation, pp. 15–34, 2010, [doi:10.1007/978-3-642-12331-3_2](https://doi.org/10.1007/978-3-642-12331-3_2). The simulator the glue in model/ and helper/ is written for.
 
 Using it in your work? Contributions are welcome, and citing the DOI helps just as much.
 <!-- org-sync:end citing -->
