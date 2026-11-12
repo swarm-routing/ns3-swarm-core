@@ -64,7 +64,9 @@ Using it in your work? Contributions are welcome, and citing the DOI helps just 
 
 What is planned and in progress here: the issues labelled [`epic`](https://github.com/swarm-routing/ns3-swarm-core/issues?q=label%3Aepic). An epic's open sub-issues carry a `priority:*` and a `model:*` label, so a contributor or an AI agent can pick one up ([how issues work](https://github.com/swarm-routing/.github/blob/main/CONTRIBUTING.md#issues)). The whole org's plan: the [roadmap](https://github.com/swarm-routing/.github/blob/main/ROADMAP.md#epics).
 
-No open epic: the work here is tracked as single issues.
+| Epic | Status | Sub-issues closed |
+|------|--------|-------------------|
+| [#82](https://github.com/swarm-routing/ns3-swarm-core/issues/82) swarm-core 2.0.0: the host contract, so a protocol core runs on any host | Planned | 0 / 4 |
 
 <details><summary>Closed: 1 epic</summary>
 
