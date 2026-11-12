@@ -385,12 +385,12 @@ because the issue threads were thorough. Caveman the chat, not the record.
   `pull_request` only, so merge an outside contributor's PR, by auto-merge or
   directly, only after `dco` passed on the head commit that merges. Never push
   to an outside contributor's PR: ask them for the change, or make it in a
-  follow-up PR after the merge (swarm-routing/.github#288). If anyone pushes
-  to such a PR, the new head must pass `dco` before it can merge: with
-  auto-merge on but the PR not yet queued, disable auto-merge until it has
-  (GitHub keeps auto-merge on after a push by someone with write access); in
-  a merge queue, remove the PR from the queue (disabling auto-merge does not)
-  and enqueue it again only after `dco` passed.
+  follow-up PR after the merge (swarm-routing/.github#288). If the maintainer
+  must push to such a PR, first disable auto-merge, or, if the PR is already
+  in a merge queue, remove it from the queue (disabling auto-merge does not).
+  Re-enable auto-merge, or enqueue it again, only after `dco` passed on the
+  new head: GitHub keeps auto-merge on after a push by someone with write
+  access, and `dco` is not a required check.
 - `review / coderabbit` is a required check (the review gate,
   swarm-routing/.github#294): it passes once CodeRabbit has reviewed the PR,
   once it says it will not, for a draft, or 30 minutes after the PR opened
@@ -399,8 +399,8 @@ because the issue threads were thorough. Caveman the chat, not the record.
   unresolved. Still read every thread and fix or answer it before resolving.
   Where the gate is not required yet (`gh api
   'repos/{owner}/{repo}/rules/branches/main'` does not list it), wait first
-  with `python3 -I ../.github/tools/pr-status/pr_status.py wait --review
-  REPO#N` (swarm-routing/.github#238).
+  with `python3 -I ../.github/tools/pr-status/pr_status.py gate REPO#N`,
+  which waits for CodeRabbit alone (swarm-routing/.github#238).
 - Never add a `Signed-off-by` trailer, for the maintainer or anyone else: a
   DCO sign-off is a person's own certification (CONTRIBUTING "Outside
   contributions").
