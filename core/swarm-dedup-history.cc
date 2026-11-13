@@ -21,7 +21,9 @@ DedupHistory::DedupHistory(std::size_t capacity, std::optional<Time> maxAge)
 }
 
 bool DedupHistory::expired(Time recordedAt, Time now) const {
-    return maxAge_ && recordedAt != kNever && now - recordedAt >= *maxAge_;
+    // Against the computed expiry time, not now - recordedAt: with fractional
+    // times the subtraction can round below the age at the exact boundary.
+    return maxAge_ && recordedAt != kNever && now >= recordedAt + *maxAge_;
 }
 
 bool DedupHistory::insert(const Key& key, Time recordedAt) {

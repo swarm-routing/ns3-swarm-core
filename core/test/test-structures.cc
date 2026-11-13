@@ -103,6 +103,14 @@ void TestDedupHistoryLifetime(Checker& c) {
     c.check(h.purge(40.0) == 1 && !h.seen(1, 1) && h.seen(2, 1, 40.0), "purge forgets the expired");
     c.check(h.purge(40.0) == 0, "purge is idempotent");
 
+    // A fractional boundary: 1.1 + 0.2 is expired at exactly 1.1 + 0.2, even
+    // though (1.1 + 0.2) - 1.1 rounds below 0.2.
+    DedupHistory frac(2, 0.2);
+    frac.record(9, 9, 1.1);
+    c.check(frac.seen(9, 9, 1.1 + 0.19) && !frac.seen(9, 9, 1.1 + 0.2), "fractional boundary");
+    c.check(frac.record(9, 9, 1.1 + 0.2) && frac.purge(1.1 + 0.2 + 0.2) == 1,
+            "re-recorded, purged");
+
     // An expired entry recorded again is new, and becomes the newest (FIFO).
     DedupHistory r(2, 5.0);
     r.record(7, 1, 0.0);
