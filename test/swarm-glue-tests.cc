@@ -9,6 +9,9 @@
 #include "swarm-glue-tests.h"
 
 #include "ns3/basic-energy-source-helper.h"
+#include "ns3/config.h"
+#include "ns3/global-value.h"
+#include "ns3/boolean.h"
 #include "ns3/double.h"
 #include "ns3/energy-source-container.h"
 #include "ns3/inet-socket-address.h"
@@ -880,12 +883,27 @@ private:
 /// #40): n0 -> n1 -> n2 on Wi-Fi, n2 walks away, n1 backtracks to n0.
 class UndeliveredTestCase : public TestCase {
 public:
-    UndeliveredTestCase()
-        : TestCase("glue: a packet the MAC gave up on comes back with its previous hop") {}
+    enum class Variant { Plain, Checksums, MacFragments };
+
+    explicit UndeliveredTestCase(Variant v)
+        : TestCase(std::string("glue: a packet the MAC gave up on comes back with its previous "
+                               "hop") +
+                   (v == Variant::Checksums      ? ", checksums on"
+                    : v == Variant::MacFragments ? "; a MAC fragment does not"
+                                                 : "")),
+          m_variant(v) {}
 
 private:
+    Variant m_variant;
+
     void DoRun() override {
         SwarmCoreSeed(1);
+        // A resent header must carry a valid checksum, or n0 drops it (#95).
+        GlobalValue::Bind("ChecksumEnabled", BooleanValue(m_variant == Variant::Checksums));
+        // 300 B: the 1000 B data packet leaves n1 in fragments, the warm-up does not.
+        Config::SetDefault("ns3::WifiRemoteStationManager::FragmentationThreshold",
+                           UintegerValue(m_variant == Variant::MacFragments ? 300 : 65535));
+        const uint32_t size = m_variant == Variant::MacFragments ? 1000 : 100;
         NodeContainer nodes;
         nodes.Create(3);
         NetDeviceContainer devs = AdhocWifi(nodes, 50.0);
@@ -912,11 +930,21 @@ private:
         Simulator::Schedule(Seconds(2.0), [&]() {
             n2->GetObject<MobilityModel>()->SetPosition(Vector(5000.0, 0.0, 0.0));
         });
-        Simulator::Schedule(Seconds(2.1), [&]() { SendUdp(src, n2a, 100); });
+        Simulator::Schedule(Seconds(2.1), [&]() { SendUdp(src, n2a, size); });
         Simulator::Stop(Seconds(4));
         Simulator::Run();
+        GlobalValue::Bind("ChecksumEnabled", BooleanValue(false));
+        Config::SetDefault("ns3::WifiRemoteStationManager::FragmentationThreshold",
+                           UintegerValue(65535));
 
         NS_TEST_EXPECT_MSG_EQ(rx.size(), 1u, "the warm-up arrived, the second packet could not");
+        if (m_variant == Variant::MacFragments) {
+            NS_TEST_EXPECT_MSG_EQ(Toy(n1)->failures.empty(), false, "the link failure is reported");
+            NS_TEST_EXPECT_MSG_EQ(Toy(n1)->undelivered.size(), 0u,
+                                  "a MAC fragment is no whole datagram: not handed back");
+            Simulator::Destroy();
+            return;
+        }
         NS_TEST_ASSERT_MSG_EQ(Toy(n1)->undelivered.size(), 1u, "n1's MAC gave the packet back");
         NS_TEST_EXPECT_MSG_EQ(Toy(n1)->undelivered[0].first, n2a, "toward n2");
         NS_TEST_EXPECT_MSG_EQ(Toy(n1)->undelivered[0].second, n0a, "with n1's previous hop");
@@ -1113,11 +1141,18 @@ private:
 }  // namespace
 
 std::vector<TestCase*> MakeGlueTestCases() {
-    return {new PortsTestCase,       new DeferredQueueTestCase,
-            new RoutingBaseTestCase, new DeferFromAdapterTestCase,
-            new IslMonitorTestCase,  new WifiMonitorTestCase,
-            new UndeliveredTestCase, new EnergyHookTestCase,
-            new ObserverTestCase,    new DeterminismTestCase};
+    return {new PortsTestCase,
+            new DeferredQueueTestCase,
+            new RoutingBaseTestCase,
+            new DeferFromAdapterTestCase,
+            new IslMonitorTestCase,
+            new WifiMonitorTestCase,
+            new UndeliveredTestCase(UndeliveredTestCase::Variant::Plain),
+            new UndeliveredTestCase(UndeliveredTestCase::Variant::Checksums),
+            new UndeliveredTestCase(UndeliveredTestCase::Variant::MacFragments),
+            new EnergyHookTestCase,
+            new ObserverTestCase,
+            new DeterminismTestCase};
 }
 
 }  // namespace ns3::swarmtest

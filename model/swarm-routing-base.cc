@@ -614,10 +614,15 @@ void SwarmRoutingBase::WifiUndelivered(Ptr<const Packet> datagram, Ipv4Address n
     Ptr<Packet> p = datagram->Copy();
     Ipv4Header header;
     p->RemoveHeader(header);
+    if (Node::ChecksumEnabled()) {
+        header.EnableChecksum();  // Deserialize does not restore it: a resend needs it
+    }
     if (header.GetDestination().IsBroadcast() || header.GetDestination().IsMulticast()) {
         return;
     }
-    if (header.GetProtocol() == kUdpProtocol) {
+    // Only a first fragment starts with the UDP header.
+    if (header.GetProtocol() == kUdpProtocol && header.GetFragmentOffset() == 0 &&
+        p->GetSize() >= UdpHeader().GetSerializedSize()) {
         UdpHeader udp;
         if (p->PeekHeader(udp) && udp.GetDestinationPort() == ControlPort()) {
             return;  // control is one hop; its loss is the protocol's own business

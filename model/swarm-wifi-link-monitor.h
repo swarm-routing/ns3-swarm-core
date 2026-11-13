@@ -74,8 +74,8 @@ public:
     typedef void (*LinkFailureCallback)(Ipv4Address neighbor, Mac48Address mac);
     /// Undelivered: the IPv4 datagram (IP header on, packet tags kept) of a
     /// unicast data frame the MAC gave up on at its retry limit, and the
-    /// neighbour it was for (0.0.0.0 if ARP does not know it). A-MSDUs and
-    /// frames that carry no IPv4 are not reported (#40).
+    /// neighbour it was for (0.0.0.0 if ARP does not know it). A-MSDUs, MAC
+    /// fragments and frames that carry no IPv4 are not reported (#40).
     typedef void (*UndeliveredCallback)(Ptr<const Packet> datagram, Ipv4Address neighbor);
 
 protected:

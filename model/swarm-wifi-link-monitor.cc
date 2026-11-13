@@ -198,7 +198,8 @@ void WifiLinkMonitor::NotifyDropped(WifiMacDropReason reason, Ptr<const WifiMpdu
     // MSDU of a data frame is LLC/SNAP + the IPv4 datagram.
     const WifiMacHeader& mac = mpdu->GetHeader();
     LlcSnapHeader llc;
-    if (mac.IsData() && !(mac.IsQosData() && mac.IsQosAmsdu()) &&
+    // A MAC fragment holds part of the datagram only: not reported.
+    if (mac.IsData() && !mpdu->IsFragment() && !(mac.IsQosData() && mac.IsQosAmsdu()) &&
         mpdu->GetPacket()->GetSize() > llc.GetSerializedSize()) {
         Ptr<Packet> datagram = mpdu->GetPacket()->Copy();
         datagram->RemoveHeader(llc);
