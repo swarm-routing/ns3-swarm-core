@@ -99,7 +99,12 @@ TypeId WifiLinkMonitor::GetTypeId() {
                             "The MAC gave up on a unicast frame at its retry limit "
                             "(neighbour IP, or 0.0.0.0 if ARP does not know it; MAC).",
                             MakeTraceSourceAccessor(&WifiLinkMonitor::m_linkFailureTrace),
-                            "ns3::WifiLinkMonitor::LinkFailureCallback");
+                            "ns3::WifiLinkMonitor::LinkFailureCallback")
+            .AddTraceSource("Undelivered",
+                            "The IPv4 datagram of a unicast data frame the MAC gave up on "
+                            "at its retry limit (IP header on), and the neighbour IP.",
+                            MakeTraceSourceAccessor(&WifiLinkMonitor::m_undeliveredTrace),
+                            "ns3::WifiLinkMonitor::UndeliveredCallback");
     return tid;
 }
 
@@ -189,6 +194,18 @@ void WifiLinkMonitor::NotifyDropped(WifiMacDropReason reason, Ptr<const WifiMpdu
     }
     ++m_failures;
     m_linkFailureTrace(IpOf(to), to);
+    // The datagram itself, so a protocol can send it another way (#40): the
+    // MSDU of a data frame is LLC/SNAP + the IPv4 datagram.
+    const WifiMacHeader& mac = mpdu->GetHeader();
+    LlcSnapHeader llc;
+    if (mac.IsData() && !(mac.IsQosData() && mac.IsQosAmsdu()) &&
+        mpdu->GetPacket()->GetSize() > llc.GetSerializedSize()) {
+        Ptr<Packet> datagram = mpdu->GetPacket()->Copy();
+        datagram->RemoveHeader(llc);
+        if (llc.GetType() == 0x0800) {  // IPv4's EtherType (PROT_NUMBER is deprecated in 3.49)
+            m_undeliveredTrace(datagram, IpOf(to));
+        }
+    }
 }
 
 WifiLinkMonitor::Neighbor& WifiLinkMonitor::Heard(Mac48Address mac) {

@@ -72,6 +72,11 @@ public:
     /// Fired when the MAC gives up on a unicast frame (retry limit): the
     /// neighbour's IP (Ipv4Address() when ARP does not know it) and its MAC.
     typedef void (*LinkFailureCallback)(Ipv4Address neighbor, Mac48Address mac);
+    /// Undelivered: the IPv4 datagram (IP header on, packet tags kept) of a
+    /// unicast data frame the MAC gave up on at its retry limit, and the
+    /// neighbour it was for (0.0.0.0 if ARP does not know it). A-MSDUs and
+    /// frames that carry no IPv4 are not reported (#40).
+    typedef void (*UndeliveredCallback)(Ptr<const Packet> datagram, Ipv4Address neighbor);
 
 protected:
     void DoDispose() override;
@@ -102,6 +107,7 @@ private:
     Neighbor& Heard(Mac48Address mac);
     std::map<Mac48Address, Neighbor> m_neighbors;  ///< bounded by MaxNeighbors
     TracedCallback<Ipv4Address, Mac48Address> m_linkFailureTrace;
+    TracedCallback<Ptr<const Packet>, Ipv4Address> m_undeliveredTrace;
 };
 
 }  // namespace ns3

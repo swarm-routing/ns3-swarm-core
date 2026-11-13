@@ -67,7 +67,11 @@ namespace ns3 {
 class SwarmPrevHopTag : public Tag {
 public:
     SwarmPrevHopTag() = default;
-    explicit SwarmPrevHopTag(Ipv4Address sender) : m_sender(sender) {}
+    /// `from`: the hop the sender had the packet from (0.0.0.0 when the
+    /// sender originated it), so a sender whose MAC gives the packet back
+    /// still knows its own previous hop (OnDataUndelivered, #40).
+    explicit SwarmPrevHopTag(Ipv4Address sender, Ipv4Address from = Ipv4Address())
+        : m_sender(sender), m_from(from) {}
 
     static TypeId GetTypeId();
     TypeId GetInstanceTypeId() const override;
@@ -77,9 +81,11 @@ public:
     void Print(std::ostream& os) const override;
 
     Ipv4Address Get() const { return m_sender; }
+    Ipv4Address GetFrom() const { return m_from; }
 
 private:
     Ipv4Address m_sender;
+    Ipv4Address m_from;
 };
 
 class SwarmRoutingBase : public Ipv4RoutingProtocol {
@@ -178,6 +184,15 @@ protected:
     /// A point-to-point link to `neighbor` came up.
     virtual void OnLinkUp(Ipv4Address /*neighbor*/) {}
 
+    /// The Wi-Fi MAC gave up on data packet `p` (IP header removed, `header`
+    /// its header) at its retry limit toward `failedNext`; `prev` is the hop
+    /// this node had it from (Ipv4Address() if it originated here). The
+    /// default does nothing: the packet is lost, as before. A protocol that
+    /// re-routes or sends it back (ARA's backtracking) calls ResendData. Only
+    /// a WifiLinkMonitor reports this; OnLinkFailure still fires first (#40).
+    virtual void OnDataUndelivered(Ptr<const Packet> /*p*/, const Ipv4Header& /*header*/,
+                                   Ipv4Address /*failedNext*/, Ipv4Address /*prev*/) {}
+
     // --- services
     // ----------------------------------------------------------------
 
@@ -188,6 +203,11 @@ protected:
     /// Forwards a data packet to `next` (stamps SwarmPrevHopTag).
     void ForwardData(Ptr<const Packet> p, const Ipv4Header& header, Ipv4Address next,
                      const UnicastForwardCallback& ucb);
+    /// Sends data packet `p` (from OnDataUndelivered) to neighbour `next`,
+    /// as ForwardData does; its TTL drops by one more hop. Calls no hook: the
+    /// protocol records what it wants. False when it cannot be sent (no
+    /// forwarding callback seen yet, or no interface toward `next`).
+    bool ResendData(Ptr<const Packet> p, const Ipv4Header& header, Ipv4Address next);
     /// Sends every held packet to `dst` that now has a next hop; the rest go
     /// back to the queue, keeping their first enqueue time.
     void ReleaseDeferred(Ipv4Address dst);
@@ -260,6 +280,7 @@ private:
     void PurgeTick();
     void RecvSocket(Ptr<Socket> socket);
     void WifiLinkFailed(Ipv4Address neighbor, Mac48Address mac);
+    void WifiUndelivered(Ptr<const Packet> datagram, Ipv4Address neighbor);
     void IslLinkChanged(Ipv4Address peer, bool up);
 
     /// Counts every event and fires the matching trace source.
@@ -303,6 +324,9 @@ private:
     /// Set across a control SendTo, so RouteOutput answers with a one-hop
     /// route to the neighbour instead of asking the protocol.
     Ipv4Address m_directTo;
+    /// Ipv4L3Protocol's forwarding callback, the same for every packet: kept
+    /// from RouteInput so ResendData can send outside it.
+    UnicastForwardCallback m_ucb;
 };
 
 }  // namespace ns3
