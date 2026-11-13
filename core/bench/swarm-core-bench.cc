@@ -4,7 +4,7 @@
 // Microbenchmarks of the per-packet primitives (#45, #46, swarm-routing/.github#32):
 // the pheromone table's add, entries and row, roulette next-hop selection at
 // 4, 16 and 64 neighbours, evaporation of a 64 x 16 table, and encoding and
-// decoding a 40-byte header with the wire helpers. Dev-only: built
+// decoding a 41-byte header with the wire helpers. Dev-only: built
 // with -DSWARM_CORE_BENCH=ON, linked against Google Benchmark (Apache-2.0,
 // fetched at a pinned commit at configure time, never shipped). Run:
 //
@@ -109,7 +109,7 @@ void BM_Row(benchmark::State& state) {
 }
 BENCHMARK(BM_Row);
 
-// A 40-byte header (version, two addresses, a sequence number, a time, a hop
+// A 41-byte header (version, two addresses, a sequence number, a time, a hop
 // count, a flag, a cost), as a protocol's control header writes it.
 template <typename W> void WriteHeader(W& w, std::uint32_t seq) {
     w.version(1);
@@ -142,7 +142,7 @@ void BM_WireEncodeReserved(benchmark::State& state) {
     for (auto _ : state) {
         std::vector<std::uint8_t> bytes;
         swarm::core::WireWriter w(bytes);
-        w.reserve(40);
+        w.reserve(41);
         WriteHeader(w, ++seq);
         benchmark::DoNotOptimize(bytes.data());
     }
@@ -152,8 +152,12 @@ BENCHMARK(BM_WireEncodeReserved);
 void BM_WireEncodeFixed(benchmark::State& state) {
     std::uint32_t seq = 0;
     for (auto _ : state) {
-        swarm::core::FixedWireWriter<40> w;
+        swarm::core::FixedWireWriter<41> w;
         WriteHeader(w, ++seq);
+        if (!w.ok()) {
+            state.SkipWithError("the header did not fit");
+            break;
+        }
         benchmark::DoNotOptimize(w.bytes().data());
         benchmark::ClobberMemory();
     }

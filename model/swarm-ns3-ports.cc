@@ -82,7 +82,7 @@ void SwarmTimerScheduler::cancel(swarm::core::TimerHandle timer) {
     if (it == m_pending.end()) {
         return;
     }
-    Simulator::Cancel(it->second);
+    Simulator::Remove(it->second);  // out of the queue, with its callback
     m_pending.erase(it);
 }
 
