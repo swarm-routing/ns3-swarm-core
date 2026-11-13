@@ -43,7 +43,8 @@ TypeId DeferredPacketQueue::GetTypeId() {
     return tid;
 }
 
-DeferredPacketQueue::DeferredPacketQueue() : m_maxPackets(64), m_maxAge(Seconds(30)) {}
+DeferredPacketQueue::DeferredPacketQueue()
+    : m_maxPackets(64), m_maxAge(Seconds(30)), m_oldest(Time::Max()) {}
 
 void DeferredPacketQueue::DoDispose() {
     m_queue.clear();
@@ -74,6 +75,19 @@ void DeferredPacketQueue::Drop(const DeferredPacket& e, DeferredDropReason reaso
 
 void DeferredPacketQueue::Enqueue(DeferredPacket entry) {
     Purge();
+    Admit(std::move(entry));
+}
+
+void DeferredPacketQueue::Requeue(std::vector<DeferredPacket> entries) {
+    // One purge for the batch: time does not move inside a call, so the
+    // per-entry Purge that Enqueue would run finds nothing more to drop.
+    Purge();
+    for (DeferredPacket& e : entries) {
+        Admit(std::move(e));
+    }
+}
+
+void DeferredPacketQueue::Admit(DeferredPacket entry) {
     if (entry.enqueued.IsZero()) {
         entry.enqueued = Simulator::Now();
     }
@@ -83,27 +97,41 @@ void DeferredPacketQueue::Enqueue(DeferredPacket entry) {
         return;
     }
     while (m_queue.size() >= m_maxPackets) {
-        // Copy before the pop: the error callback runs after it, and may
+        // Move out before the pop: the error callback runs after it, and may
         // re-enter the queue.
-        const DeferredPacket oldest = m_queue.front();
+        const DeferredPacket oldest = std::move(m_queue.front());
         m_queue.pop_front();
         Drop(oldest, DeferredDropReason::Overflow);
     }
+    m_oldest = std::min(m_oldest, entry.enqueued);
     m_queue.push_back(std::move(entry));
+}
+
+template <typename Pred> std::vector<DeferredPacket> DeferredPacketQueue::Extract(Pred pred) {
+    // Scan first: most calls (a purge with nothing expired, a release for a
+    // destination with nothing held) remove nothing and touch nothing.
+    std::vector<DeferredPacket> out;
+    auto first = std::find_if(m_queue.begin(), m_queue.end(), pred);
+    if (first == m_queue.end()) {
+        return out;
+    }
+    // Stable, in place, by move: the kept entries close up in order.
+    auto keep = first;
+    for (auto it = first; it != m_queue.end(); ++it) {
+        if (pred(*it)) {
+            out.push_back(std::move(*it));
+        } else {
+            *keep++ = std::move(*it);
+        }
+    }
+    m_queue.erase(keep, m_queue.end());
+    return out;
 }
 
 std::vector<DeferredPacket> DeferredPacketQueue::Release(Ipv4Address dst) {
     Purge();
-    std::vector<DeferredPacket> out;
-    std::deque<DeferredPacket> kept;
-    for (auto& e : m_queue) {
-        if (e.header.GetDestination() == dst) {
-            out.push_back(e);
-        } else {
-            kept.push_back(e);
-        }
-    }
-    m_queue.swap(kept);
+    std::vector<DeferredPacket> out =
+        Extract([dst](const DeferredPacket& e) { return e.header.GetDestination() == dst; });
     const Time now = Simulator::Now();
     for (const auto& e : out) {
         const double held = (now - e.enqueued).GetSeconds();
@@ -115,34 +143,24 @@ std::vector<DeferredPacket> DeferredPacketQueue::Release(Ipv4Address dst) {
 }
 
 void DeferredPacketQueue::Discard(Ipv4Address dst) {
-    std::deque<DeferredPacket> kept;
-    std::vector<DeferredPacket> dropped;
-    for (auto& e : m_queue) {
-        if (e.header.GetDestination() == dst) {
-            dropped.push_back(e);
-        } else {
-            kept.push_back(e);
-        }
-    }
-    m_queue.swap(kept);
-    for (const auto& e : dropped) {
+    for (const auto& e :
+         Extract([dst](const DeferredPacket& p) { return p.header.GetDestination() == dst; })) {
         Drop(e, DeferredDropReason::Discarded);
     }
 }
 
 void DeferredPacketQueue::Purge() {
-    std::deque<DeferredPacket> kept;
-    std::vector<DeferredPacket> expired;
-    for (auto& e : m_queue) {
-        if (Expired(e)) {
-            expired.push_back(e);
-        } else {
-            kept.push_back(e);
-        }
+    // m_oldest is a lower bound on every held packet's enqueue time: while
+    // even it is younger than MaxAge, nothing has expired and nothing is read.
+    if (m_queue.empty() || Simulator::Now() - m_oldest < m_maxAge) {
+        return;
     }
-    m_queue.swap(kept);
-    for (const auto& e : expired) {
+    for (const auto& e : Extract([this](const DeferredPacket& p) { return Expired(p); })) {
         Drop(e, DeferredDropReason::Expired);
+    }
+    m_oldest = Time::Max();
+    for (const auto& e : m_queue) {
+        m_oldest = std::min(m_oldest, e.enqueued);
     }
 }
 

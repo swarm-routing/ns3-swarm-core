@@ -12,6 +12,7 @@
 #include "ns3/config.h"
 #include "ns3/global-value.h"
 #include "ns3/boolean.h"
+#include "ns3/buffer.h"
 #include "ns3/double.h"
 #include "ns3/energy-source-container.h"
 #include "ns3/inet-socket-address.h"
@@ -424,6 +425,214 @@ private:
         NS_TEST_EXPECT_MSG_EQ(traced[DeferredDropReason::Expired], 1, "Drop trace: expired");
         NS_TEST_EXPECT_MSG_EQ(traced[DeferredDropReason::Discarded], 1, "Drop trace: discarded");
         q->Dispose();
+    }
+};
+
+/// The queue's order, expiry and batched re-queue (#46).
+class DeferredQueueOrderTestCase : public TestCase {
+public:
+    DeferredQueueOrderTestCase()
+        : TestCase("glue: DeferredPacketQueue keeps order; Requeue is one batch") {}
+
+private:
+    static DeferredPacket Entry(Ipv4Address dst, uint32_t size) {
+        DeferredPacket e;
+        e.packet = Create<Packet>(size);
+        e.header.SetDestination(dst);
+        e.ecb = MakeCallback(&CountError);
+        return e;
+    }
+
+    static std::vector<uint32_t> Sizes(const std::vector<DeferredPacket>& v) {
+        std::vector<uint32_t> out;
+        for (const auto& e : v) {
+            out.push_back(e.packet->GetSize());
+        }
+        return out;
+    }
+
+    void DoRun() override {
+        Ptr<DeferredPacketQueue> q = CreateObject<DeferredPacketQueue>();
+        q->SetAttribute("MaxPackets", UintegerValue(6));
+        q->SetAttribute("MaxAge", TimeValue(Seconds(1)));
+        g_errors = 0;
+        const Ipv4Address a("10.0.0.1");
+        const Ipv4Address b("10.0.0.2");
+        const Ipv4Address c("10.0.0.3");
+        std::vector<uint32_t> firstA;
+        std::vector<uint32_t> secondA;
+        std::vector<uint32_t> restB;
+        std::vector<Ipv4Address> dests;
+        uint64_t enqueuedAfterRequeue = 0;
+        uint32_t sizeAfterOverflow = 0;
+
+        // t = 0.1 (not 0: an enqueue time of zero reads as "not yet queued"):
+        // a1 b2 a3 c4 a5 b6, interleaved.
+        const std::array<std::pair<Ipv4Address, uint32_t>, 6> fill{
+            {{a, 1}, {b, 2}, {a, 3}, {c, 4}, {a, 5}, {b, 6}}};
+        Simulator::Schedule(Seconds(0.1), [&]() {
+            for (const auto& [d, n] : fill) {
+                q->Enqueue(Entry(d, n));
+            }
+        });
+        Simulator::Schedule(Seconds(0.5), [&]() {
+            // Release a: oldest first; the others keep their order.
+            std::vector<DeferredPacket> released = q->Release(a);
+            firstA = Sizes(released);
+            dests = q->Destinations();
+            // No route yet: back as one batch, after b and c, in order, with
+            // their first enqueue time (t = 0.1).
+            q->Requeue(std::move(released));
+            enqueuedAfterRequeue = q->Stats().enqueued;
+            // A new one at t = 0.5: the queue is full, so b2 goes for room.
+            q->Requeue(std::vector<DeferredPacket>{Entry(a, 7)});
+        });
+        Simulator::Schedule(Seconds(1.2), [&]() {
+            // Everything enqueued at t = 0.1 has expired, the re-queued a1 a3 a5
+            // too (their first enqueue time was kept); a7 (t = 0.5) has not.
+            restB = Sizes(q->Release(b));
+            secondA = Sizes(q->Release(a));
+            // Overflow through Requeue drops the oldest, as Enqueue does.
+            std::vector<DeferredPacket> many;
+            for (uint32_t i = 10; i < 18; ++i) {
+                many.push_back(Entry(c, i));
+            }
+            q->Requeue(std::move(many));
+            sizeAfterOverflow = q->Size();
+        });
+        Simulator::Run();
+        Simulator::Destroy();
+
+        NS_TEST_EXPECT_MSG_EQ((firstA == std::vector<uint32_t>{1, 3, 5}), true,
+                              "released oldest first");
+        NS_TEST_EXPECT_MSG_EQ((dests == std::vector<Ipv4Address>{b, c}), true,
+                              "the rest keep their order");
+        NS_TEST_EXPECT_MSG_EQ(enqueuedAfterRequeue, 9u, "a requeued packet counts as enqueued");
+        NS_TEST_EXPECT_MSG_EQ((secondA == std::vector<uint32_t>{7}), true,
+                              "re-queued packets kept their first enqueue time");
+        NS_TEST_EXPECT_MSG_EQ(restB.empty(), true, "expired packets are not released");
+        NS_TEST_EXPECT_MSG_EQ(sizeAfterOverflow, 6u, "Requeue respects MaxPackets");
+        const DeferredQueueStats& s = q->Stats();
+        NS_TEST_EXPECT_MSG_EQ(s.expired, 5u, "c4 b6 and the re-queued a1 a3 a5 expired");
+        NS_TEST_EXPECT_MSG_EQ(s.overflow, 3u, "b2, then two c packets, dropped for room");
+        NS_TEST_EXPECT_MSG_EQ(s.enqueued,
+                              s.released + s.overflow + s.expired + s.discarded + q->Size(),
+                              "the counts add up");
+        NS_TEST_EXPECT_MSG_EQ(g_errors, 8u, "every drop through the error callback");
+        q->Dispose();
+    }
+};
+
+/// The cached ports see a monitor aggregated after the first read (#46).
+class PortCacheTestCase : public TestCase {
+public:
+    PortCacheTestCase() : TestCase("glue: cached ports follow a monitor added later") {}
+
+private:
+    void DoRun() override {
+        NodeContainer nodes;
+        nodes.Create(2);
+        PointToPointHelper p2p;
+        p2p.Install(nodes.Get(0), nodes.Get(1));
+        InternetStackHelper stack;
+        stack.SetRoutingHelper(SwarmRoutingHelper("ns3::swarmtest::ToyProtocol"));
+        stack.Install(nodes);  // no monitors
+        Ptr<ToyProtocol> toy = Toy(nodes.Get(0));
+        const swarm::core::INeighborProvider* before = &toy->Neighbors();
+        NS_TEST_EXPECT_MSG_EQ((dynamic_cast<const IslLinkMonitor*>(before) == nullptr), true,
+                              "no monitor: the null port");
+        NS_TEST_EXPECT_MSG_EQ((&toy->Neighbors() == before), true, "the port is cached");
+        Ptr<IslLinkMonitor> isl = CreateObject<IslLinkMonitor>();
+        isl->Install(nodes.Get(0));
+        NS_TEST_EXPECT_MSG_EQ((&toy->Neighbors() == PeekPointer(isl)), true,
+                              "a monitor aggregated later is seen");
+        NS_TEST_EXPECT_MSG_EQ((&toy->LinkState() == PeekPointer(isl)), true,
+                              "and is the link-state port");
+        NS_TEST_EXPECT_MSG_EQ(std::isnan(toy->LinkQuality().sinrDbFrom(1)), true,
+                              "no wifi monitor: null link quality");
+        Simulator::Destroy();
+    }
+};
+
+/// A cancelled timer never runs, in the simulator (#46).
+class CancellableTimerTestCase : public TestCase {
+public:
+    CancellableTimerTestCase() : TestCase("glue: SwarmTimerScheduler cancels a timer") {}
+
+private:
+    void DoRun() override {
+        SwarmTimerScheduler timers;
+        std::vector<std::string> ran;
+        const swarm::core::TimerHandle stale =
+            timers.scheduleCancellable(0.5, [&]() { ran.emplace_back("stale"); });
+        const swarm::core::TimerHandle kept =
+            timers.scheduleCancellable(0.6, [&]() { ran.emplace_back("kept"); });
+        timers.scheduleCancellable(0.8, [&]() { ran.emplace_back("late"); });
+        NS_TEST_EXPECT_MSG_NE(stale, swarm::core::kNoTimer, "a real handle");
+        NS_TEST_EXPECT_MSG_NE(stale, kept, "distinct handles");
+        NS_TEST_EXPECT_MSG_EQ(timers.Pending(), 3u, "three pending");
+        std::size_t pendingAfterFire = 99;
+        Simulator::Schedule(Seconds(0.1), [&]() { timers.cancel(stale); });
+        Simulator::Schedule(Seconds(0.7), [&]() {
+            pendingAfterFire = timers.Pending();
+            timers.cancel(kept);  // already ran: a no-op
+            timers.CancelAll();   // drops "late"
+        });
+        Simulator::Run();
+        Simulator::Destroy();
+        NS_TEST_EXPECT_MSG_EQ((ran == std::vector<std::string>{"kept"}), true,
+                              "the cancelled timer never ran");
+        NS_TEST_EXPECT_MSG_EQ(pendingAfterFire, 1u, "a timer that ran is forgotten");
+        NS_TEST_EXPECT_MSG_EQ(timers.Pending(), 0u, "CancelAll forgets the rest");
+    }
+};
+
+/// The Buffer::Iterator wire helpers write the core writer's bytes (#46).
+class WireBufferTestCase : public TestCase {
+public:
+    WireBufferTestCase() : TestCase("glue: wire fields straight into an ns-3 Buffer") {}
+
+private:
+    template <typename W> static void Fields(W& w) {
+        w.version(3);
+        w.u16(0xBEEF);
+        w.i32(-5);
+        w.f64(1.25);
+        w.boolean(true);
+    }
+
+    void DoRun() override {
+        std::vector<uint8_t> ref;
+        swarm::core::WireWriter rw(ref);
+        Fields(rw);
+        Buffer buf;
+        buf.AddAtStart(static_cast<uint32_t>(ref.size()));
+        Buffer::Iterator it = buf.Begin();
+        BufferWireWriter bw(it);
+        Fields(bw);
+        NS_TEST_EXPECT_MSG_EQ(bw.size(), ref.size(), "every byte written");
+        std::vector<uint8_t> got(buf.GetSize());
+        buf.CopyData(got.data(), buf.GetSize());
+        NS_TEST_EXPECT_MSG_EQ((got == ref), true, "same bytes as the vector writer");
+
+        std::array<uint8_t, 32> scratch{};
+        Buffer::Iterator rd = buf.Begin();
+        swarm::core::WireReader r(ReadWireBytes(rd, scratch, static_cast<uint32_t>(ref.size())));
+        NS_TEST_EXPECT_MSG_EQ(r.expectVersion(3), true, "version");
+        NS_TEST_EXPECT_MSG_EQ(r.u16(), 0xBEEF, "u16");
+        NS_TEST_EXPECT_MSG_EQ(r.i32(), -5, "i32");
+        NS_TEST_EXPECT_MSG_EQ(r.f64(), 1.25, "f64");
+        NS_TEST_EXPECT_MSG_EQ(r.boolean(), true, "bool");
+        NS_TEST_EXPECT_MSG_EQ(r.atEnd(), true, "nothing left");
+
+        Buffer::Iterator shortRd = buf.Begin();
+        std::array<uint8_t, 4> tiny{};
+        swarm::core::WireReader cut(
+            ReadWireBytes(shortRd, tiny, static_cast<uint32_t>(ref.size())));
+        cut.u8();
+        cut.u16();
+        cut.i32();
+        NS_TEST_EXPECT_MSG_EQ(cut.ok(), false, "a short scratch fails the reader closed");
     }
 };
 
@@ -1143,6 +1352,10 @@ private:
 std::vector<TestCase*> MakeGlueTestCases() {
     return {new PortsTestCase,
             new DeferredQueueTestCase,
+            new DeferredQueueOrderTestCase,
+            new PortCacheTestCase,
+            new CancellableTimerTestCase,
+            new WireBufferTestCase,
             new RoutingBaseTestCase,
             new DeferFromAdapterTestCase,
             new IslMonitorTestCase,

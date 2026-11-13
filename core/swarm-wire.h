@@ -21,24 +21,25 @@
 #ifndef SWARM_CORE_WIRE_H
 #define SWARM_CORE_WIRE_H
 
+#include <array>
 #include <bit>
 #include <cstddef>
 #include <cstdint>
+#include <cstring>
 #include <span>
 #include <vector>
 
 namespace swarm::core {
 
-/// Appends little-endian fields to a byte buffer.
-class WireWriter {
+/// The field encoders every writer shares (#46): each field is formed in a
+/// small array and handed to the writer's `append(const uint8_t*, size_t)`
+/// in one call, never byte by byte.
+template <typename Derived> class WireFields {
 public:
-    /// Writes to the end of `out`; the buffer must outlive the writer.
-    explicit WireWriter(std::vector<std::uint8_t>& out) : out_(out) {}
-
     /// The protocol's wire version: by convention the first byte of a frame.
     void version(std::uint8_t v) { u8(v); }
 
-    void u8(std::uint8_t v) { out_.push_back(v); }
+    void u8(std::uint8_t v) { self().append(&v, 1); }
     void boolean(bool v) { u8(v ? 1 : 0); }
     void u16(std::uint16_t v) { put(v, 2); }
     void u32(std::uint32_t v) { put(v, 4); }
@@ -47,17 +48,62 @@ public:
     void f32(float v) { u32(std::bit_cast<std::uint32_t>(v)); }
     void f64(double v) { u64(std::bit_cast<std::uint64_t>(v)); }
 
+private:
+    Derived& self() { return static_cast<Derived&>(*this); }
+    void put(std::uint64_t v, std::size_t bytes) {
+        std::array<std::uint8_t, 8> b{};
+        for (std::size_t i = 0; i < bytes; ++i) {
+            b[i] = static_cast<std::uint8_t>((v >> (8 * i)) & 0xFFu);
+        }
+        self().append(b.data(), bytes);
+    }
+};
+
+/// Appends little-endian fields to a byte buffer.
+class WireWriter : public WireFields<WireWriter> {
+public:
+    /// Writes to the end of `out`; the buffer must outlive the writer.
+    explicit WireWriter(std::vector<std::uint8_t>& out) : out_(out) {}
+
+    /// Makes room for `bytes` more, so a header of known size is written with
+    /// at most one allocation (#46).
+    void reserve(std::size_t bytes) { out_.reserve(out_.size() + bytes); }
+
     /// Bytes in the buffer (including any written before this writer).
     std::size_t size() const { return out_.size(); }
 
-private:
-    void put(std::uint64_t v, int bytes) {
-        for (int i = 0; i < bytes; ++i) {
-            out_.push_back(static_cast<std::uint8_t>((v >> (8 * i)) & 0xFFu));
-        }
+    void append(const std::uint8_t* data, std::size_t n) {
+        out_.insert(out_.end(), data, data + n);
     }
 
+private:
     std::vector<std::uint8_t>& out_;
+};
+
+/// Writes little-endian fields into a fixed buffer of `N` bytes held in the
+/// writer itself: no allocation, for a header whose size is known (#46). A
+/// field that does not fit is not written, and ok() turns false for good.
+template <std::size_t N> class FixedWireWriter : public WireFields<FixedWireWriter<N>> {
+public:
+    /// False once a field did not fit; stays false.
+    bool ok() const { return ok_; }
+    /// Bytes written.
+    std::size_t size() const { return size_; }
+    std::span<const std::uint8_t> bytes() const { return {buf_.data(), size_}; }
+
+    void append(const std::uint8_t* data, std::size_t n) {
+        if (!ok_ || N - size_ < n) {
+            ok_ = false;
+            return;
+        }
+        std::memcpy(buf_.data() + size_, data, n);
+        size_ += n;
+    }
+
+private:
+    std::array<std::uint8_t, N> buf_{};
+    std::size_t size_ = 0;
+    bool ok_ = true;
 };
 
 /// Reads little-endian fields from untrusted bytes; never reads past the end.
@@ -114,9 +160,15 @@ private:
             fail();
             return 0;
         }
+        // One bounds check, then the field in one copy (#46); the bytes are
+        // little-endian, so a big-endian host assembles them by shifts.
         std::uint64_t v = 0;
-        for (std::size_t i = 0; i < n; ++i) {
-            v |= static_cast<std::uint64_t>(bytes_[pos_ + i]) << (8 * i);
+        if constexpr (std::endian::native == std::endian::little) {
+            std::memcpy(&v, bytes_.data() + pos_, n);
+        } else {
+            for (std::size_t i = 0; i < n; ++i) {
+                v |= static_cast<std::uint64_t>(bytes_[pos_ + i]) << (8 * i);
+            }
         }
         pos_ += n;
         return v;

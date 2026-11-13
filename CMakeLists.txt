@@ -41,6 +41,7 @@ build_lib(
     model/swarm-ns3-ports.h
     model/swarm-routing-base.h
     model/swarm-wifi-link-monitor.h
+    model/swarm-wire-buffer.h
   LIBRARIES_TO_LINK ${libcore} ${libnetwork} ${libinternet} ${libwifi} ${libpoint-to-point}
                     ${libenergy} ${libmobility}
   TEST_SOURCES

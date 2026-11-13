@@ -134,6 +134,7 @@ int64_t SwarmRoutingBase::AssignStreams(int64_t stream) {
 }
 
 void SwarmRoutingBase::DoInitialize() {
+    m_portsStale = true;
     m_purgeTimer.SetFunction(&SwarmRoutingBase::PurgeTick, this);
     m_purgeTimer.Schedule(m_purgeInterval);
     if (Ptr<Node> node = NodeOf()) {
@@ -154,10 +155,10 @@ void SwarmRoutingBase::DoInitialize() {
 void SwarmRoutingBase::DoDispose() {
     m_timers.CancelAll();
     for (auto& kv : m_sockets) {
-        kv.first->Close();
+        kv.socket->Close();
     }
     for (auto& kv : m_bcastSockets) {
-        kv.first->Close();
+        kv.socket->Close();
     }
     m_sockets.clear();
     m_bcastSockets.clear();
@@ -168,6 +169,7 @@ void SwarmRoutingBase::DoDispose() {
     }
     m_ipv4 = nullptr;
     m_lo = nullptr;
+    m_portsStale = true;  // the cached ports point into the node's aggregate
     Ipv4RoutingProtocol::DoDispose();
 }
 
@@ -177,6 +179,7 @@ void SwarmRoutingBase::SetIpv4(Ptr<Ipv4> ipv4) {
     m_ipv4 = ipv4;
     // Interface 0 is the loopback device, added before any routing protocol.
     m_lo = m_ipv4->GetNetDevice(0);
+    m_portsStale = true;
 }
 
 Ptr<Node> SwarmRoutingBase::NodeOf() const {
@@ -187,43 +190,60 @@ Ptr<Node> SwarmRoutingBase::NodeOf() const {
 
 // --- ports ---------------------------------------------------------------------
 
-const swarm::core::ILinkState& SwarmRoutingBase::LinkState() const {
-    static const NullLinkState kNull;
+void SwarmRoutingBase::RefreshPorts() const {
+    static const NullLinkState kNullLinkState;
+    static const NullLinkQuality kNullLinkQuality;
+    static const NullNeighborProvider kNullNeighbors;
+    static const NullEnergy kNullEnergy;
     Ptr<Node> node = NodeOf();
-    if (Ptr<WifiLinkMonitor> wifi = node ? node->GetObject<WifiLinkMonitor>() : nullptr) {
-        return *wifi;
+    Ptr<WifiLinkMonitor> wifi = node ? node->GetObject<WifiLinkMonitor>() : nullptr;
+    Ptr<IslLinkMonitor> isl = node ? node->GetObject<IslLinkMonitor>() : nullptr;
+    Ptr<EnergyMetricHook> hook = node ? node->GetObject<EnergyMetricHook>() : nullptr;
+    m_linkStatePort = wifi  ? static_cast<const swarm::core::ILinkState*>(PeekPointer(wifi))
+                      : isl ? static_cast<const swarm::core::ILinkState*>(PeekPointer(isl))
+                            : &kNullLinkState;
+    m_linkQualityPort =
+        wifi ? static_cast<const swarm::core::ILinkQuality*>(PeekPointer(wifi)) : &kNullLinkQuality;
+    m_neighborsPort = isl ? static_cast<const swarm::core::INeighborProvider*>(PeekPointer(isl))
+                          : &kNullNeighbors;
+    m_energyPort =
+        hook ? static_cast<const swarm::core::IEnergy*>(PeekPointer(hook)) : &kNullEnergy;
+    // Without a node yet, look again next time: SetIpv4 has not run.
+    m_portsStale = !node;
+}
+
+void SwarmRoutingBase::NotifyNewAggregate() {
+    // A monitor aggregated to the node after the ports were read (#46).
+    m_portsStale = true;
+    Ipv4RoutingProtocol::NotifyNewAggregate();
+}
+
+const swarm::core::ILinkState& SwarmRoutingBase::LinkState() const {
+    if (m_portsStale) {
+        RefreshPorts();
     }
-    if (Ptr<IslLinkMonitor> isl = node ? node->GetObject<IslLinkMonitor>() : nullptr) {
-        return *isl;
-    }
-    return kNull;
+    return *m_linkStatePort;
 }
 
 const swarm::core::ILinkQuality& SwarmRoutingBase::LinkQuality() const {
-    static const NullLinkQuality kNull;
-    Ptr<Node> node = NodeOf();
-    if (Ptr<WifiLinkMonitor> wifi = node ? node->GetObject<WifiLinkMonitor>() : nullptr) {
-        return *wifi;
+    if (m_portsStale) {
+        RefreshPorts();
     }
-    return kNull;
+    return *m_linkQualityPort;
 }
 
 const swarm::core::INeighborProvider& SwarmRoutingBase::Neighbors() const {
-    static const NullNeighborProvider kNull;
-    Ptr<Node> node = NodeOf();
-    if (Ptr<IslLinkMonitor> isl = node ? node->GetObject<IslLinkMonitor>() : nullptr) {
-        return *isl;
+    if (m_portsStale) {
+        RefreshPorts();
     }
-    return kNull;
+    return *m_neighborsPort;
 }
 
 const swarm::core::IEnergy& SwarmRoutingBase::Energy() const {
-    static const NullEnergy kNull;
-    Ptr<Node> node = NodeOf();
-    if (Ptr<EnergyMetricHook> hook = node ? node->GetObject<EnergyMetricHook>() : nullptr) {
-        return *hook;
+    if (m_portsStale) {
+        RefreshPorts();
     }
-    return kNull;
+    return *m_energyPort;
 }
 
 // --- the router observer ------------------------------------------------------------
@@ -302,12 +322,12 @@ std::string SwarmRoutingBase::KindName(uint8_t kind) const {
 // --- addresses and routes --------------------------------------------------------
 
 Ipv4Address SwarmRoutingBase::MainAddress() const {
-    return m_sockets.empty() ? Ipv4Address() : m_sockets.begin()->second.GetLocal();
+    return m_sockets.empty() ? Ipv4Address() : m_sockets.begin()->iface.GetLocal();
 }
 
 bool SwarmRoutingBase::IsMyAddress(Ipv4Address a) const {
     for (const auto& kv : m_sockets) {
-        if (kv.second.GetLocal() == a) {
+        if (kv.iface.GetLocal() == a) {
             return true;
         }
     }
@@ -316,20 +336,24 @@ bool SwarmRoutingBase::IsMyAddress(Ipv4Address a) const {
 
 int32_t SwarmRoutingBase::InterfaceTowards(Ipv4Address next) const {
     for (const auto& kv : m_sockets) {
-        const Ipv4InterfaceAddress& ifa = kv.second;
+        const Ipv4InterfaceAddress& ifa = kv.iface;
         if (next.CombineMask(ifa.GetMask()) == ifa.GetLocal().CombineMask(ifa.GetMask())) {
-            return m_ipv4->GetInterfaceForAddress(ifa.GetLocal());
+            return kv.ifIndex;
         }
     }
     if (!m_sockets.empty()) {
-        return m_ipv4->GetInterfaceForAddress(m_sockets.begin()->second.GetLocal());
+        return m_sockets.begin()->ifIndex;
     }
     return -1;
 }
 
 Ptr<Ipv4Route> SwarmRoutingBase::DirectRoute(Ipv4Address dst, Ipv4Address next,
                                              Ipv4Address src) const {
-    const int32_t ifIdx = InterfaceTowards(next);
+    return DirectRoute(dst, next, src, InterfaceTowards(next));
+}
+
+Ptr<Ipv4Route> SwarmRoutingBase::DirectRoute(Ipv4Address dst, Ipv4Address next, Ipv4Address src,
+                                             int32_t ifIdx) const {
     if (ifIdx < 0) {
         return nullptr;
     }
@@ -348,14 +372,13 @@ Ptr<Ipv4Route> SwarmRoutingBase::LoopbackRoute(const Ipv4Header& header, Ptr<Net
     route->SetGateway(Ipv4Address("127.0.0.1"));
     Ipv4Address src;
     for (const auto& kv : m_sockets) {
-        if (!oif || m_ipv4->GetInterfaceForDevice(oif) ==
-                        m_ipv4->GetInterfaceForAddress(kv.second.GetLocal())) {
-            src = kv.second.GetLocal();
+        if (!oif || m_ipv4->GetInterfaceForDevice(oif) == kv.ifIndex) {
+            src = kv.iface.GetLocal();
             break;
         }
     }
     if (src == Ipv4Address() && !m_sockets.empty()) {
-        src = m_sockets.begin()->second.GetLocal();
+        src = m_sockets.begin()->iface.GetLocal();
     }
     route->SetSource(src);
     route->SetOutputDevice(m_lo);
@@ -452,7 +475,8 @@ bool SwarmRoutingBase::RouteInput(Ptr<const Packet> p, const Ipv4Header& header,
 
 void SwarmRoutingBase::ForwardData(Ptr<const Packet> p, const Ipv4Header& header, Ipv4Address next,
                                    const UnicastForwardCallback& ucb) {
-    Ptr<Ipv4Route> route = DirectRoute(header.GetDestination(), next, header.GetSource());
+    const int32_t ifIdx = InterfaceTowards(next);  // once per forward (#46)
+    Ptr<Ipv4Route> route = DirectRoute(header.GetDestination(), next, header.GetSource(), ifIdx);
     if (!route || ucb.IsNull()) {
         return;
     }
@@ -464,8 +488,7 @@ void SwarmRoutingBase::ForwardData(Ptr<const Packet> p, const Ipv4Header& header
     if (q->RemovePacketTag(old)) {
         from = IsMyAddress(old.Get()) ? old.GetFrom() : old.Get();
     }
-    q->AddPacketTag(
-        SwarmPrevHopTag(m_ipv4->GetAddress(InterfaceTowards(next), 0).GetLocal(), from));
+    q->AddPacketTag(SwarmPrevHopTag(m_ipv4->GetAddress(ifIdx, 0).GetLocal(), from));
     ucb(route, q, header);
 }
 
@@ -496,6 +519,7 @@ void SwarmRoutingBase::PurgeTick() {
 }
 
 void SwarmRoutingBase::ReleaseDeferred(Ipv4Address dst) {
+    std::vector<DeferredPacket> back;
     for (DeferredPacket& e : m_queue->Release(dst)) {
         SwarmPrevHopTag tag;
         Ipv4Address prev;
@@ -504,11 +528,14 @@ void SwarmRoutingBase::ReleaseDeferred(Ipv4Address dst) {
         }
         const Ipv4Address next = SelectNextHop(dst, e.header.GetSource(), prev, e.packet);
         if (next == Ipv4Address()) {
-            m_queue->Enqueue(e);  // keeps its first enqueue time
+            back.push_back(std::move(e));  // keeps its first enqueue time
             continue;
         }
         OnDataForwarded(e.packet, e.header, next);
         ForwardData(e.packet, e.header, next, e.ucb);
+    }
+    if (!back.empty()) {
+        m_queue->Requeue(std::move(back));  // once, in order (#46)
     }
 }
 
@@ -519,6 +546,7 @@ void SwarmRoutingBase::DiscardDeferred(Ipv4Address dst) {
 // --- control sockets -----------------------------------------------------------------
 
 void SwarmRoutingBase::NotifyInterfaceUp(uint32_t interface) {
+    m_portsStale = true;
     Ptr<Ipv4L3Protocol> l3 = m_ipv4->GetObject<Ipv4L3Protocol>();
     if (Ptr<IslLinkMonitor> isl = NodeOf()->GetObject<IslLinkMonitor>()) {
         isl->NotifyInterface(interface, true);
@@ -538,7 +566,8 @@ void SwarmRoutingBase::NotifyInterfaceUp(uint32_t interface) {
         s->Bind(InetSocketAddress(bind, ControlPort()));
         s->SetAllowBroadcast(true);
         s->SetIpTtl(1);
-        (bind == iface.GetLocal() ? m_sockets : m_bcastSockets).emplace_back(s, iface);
+        (bind == iface.GetLocal() ? m_sockets : m_bcastSockets)
+            .push_back({s, iface, static_cast<int32_t>(interface)});
     }
 }
 
@@ -548,9 +577,8 @@ void SwarmRoutingBase::NotifyInterfaceDown(uint32_t interface) {
     }
     for (auto* m : {&m_sockets, &m_bcastSockets}) {
         for (auto it = m->begin(); it != m->end();) {
-            if (m_ipv4->GetInterfaceForAddress(it->second.GetLocal()) ==
-                static_cast<int32_t>(interface)) {
-                it->first->Close();
+            if (it->ifIndex == static_cast<int32_t>(interface)) {
+                it->socket->Close();
                 it = m->erase(it);
             } else {
                 ++it;
@@ -565,16 +593,16 @@ void SwarmRoutingBase::NotifyRemoveAddress(uint32_t, Ipv4InterfaceAddress) {}
 
 void SwarmRoutingBase::BroadcastControl(Ptr<Packet> p) {
     for (const auto& kv : m_sockets) {
-        kv.first->SendTo(p->Copy(), 0, InetSocketAddress(kv.second.GetBroadcast(), ControlPort()));
+        kv.socket->SendTo(p->Copy(), 0, InetSocketAddress(kv.iface.GetBroadcast(), ControlPort()));
     }
 }
 
 void SwarmRoutingBase::UnicastControl(Ptr<Packet> p, Ipv4Address neighbor) {
     const int32_t ifIdx = InterfaceTowards(neighbor);
     for (const auto& kv : m_sockets) {
-        if (m_ipv4->GetInterfaceForAddress(kv.second.GetLocal()) == ifIdx) {
+        if (kv.ifIndex == ifIdx) {
             m_directTo = neighbor;
-            kv.first->SendTo(p, 0, InetSocketAddress(neighbor, ControlPort()));
+            kv.socket->SendTo(p, 0, InetSocketAddress(neighbor, ControlPort()));
             m_directTo = Ipv4Address();
             return;
         }
@@ -593,9 +621,9 @@ void SwarmRoutingBase::RecvSocket(Ptr<Socket> socket) {
     }
     Ipv4Address receiver;
     for (const SocketList* list : {&m_sockets, &m_bcastSockets}) {
-        for (const auto& [s, iface] : *list) {
-            if (s == socket) {
-                receiver = iface.GetLocal();
+        for (const BoundSocket& b : *list) {
+            if (b.socket == socket) {
+                receiver = b.iface.GetLocal();
             }
         }
     }

@@ -20,8 +20,9 @@ AntHocNet's dual-licensed `core/`, plus ns-3 cross-layer glue
 ```
 CMakeLists.txt      build_lib(LIBNAME swarm-core ...); ns-3 generates ns3/swarm-core-module.h
 core/               simulator-free primitives, namespace swarm::core — MIT OR GPL-2.0-only, carries core/LICENSE:
-                    swarm-types.h, swarm-ports.h (IClock, IRng, INeighborProvider, ITimerScheduler,
-                    ILinkState, ILinkQuality, IEnergy), swarm-wire.h (LE WireWriter/WireReader, version byte),
+                    swarm-types.h, swarm-ports.h (IClock, IRng, INeighborProvider, ITimerScheduler with
+                    cancellable timers, ILinkState, ILinkQuality, IEnergy), swarm-wire.h (LE WireWriter,
+                    FixedWireWriter<N> with no allocation, WireReader; version byte; #46),
                     swarm-visited-path.h, swarm-dedup-history.{h,cc} (count cap, optional entry lifetime;
                     #33), swarm-pheromone-table.{h,cc} (flat per-destination rows: row() views, forEach,
                     bestEntry; #45),
@@ -34,7 +35,9 @@ core/bench/         dev-only microbenchmarks (MIT OR GPL-2.0-only; Google Benchm
 model/              ns-3 glue — GPL-2.0-only; each file derived from AntHocNet names its source file and commit:
                     swarm-core.h (kSwarmCoreApiVersion, SwarmCoreSeed), swarm-ns3-ports.h (SwarmClock, SwarmRng,
                     SwarmTimerScheduler, address conversion, null ports), swarm-deferred-packet-queue.h
-                    (DeferredPacketQueue: MaxPackets 64 / MaxAge 30 s attributes, drop accounting),
+                    (DeferredPacketQueue: MaxPackets 64 / MaxAge 30 s attributes, drop accounting, in-place
+                    moves, Requeue in one batch; #46), swarm-wire-buffer.h (BufferWireWriter, ReadWireBytes:
+                    the core wire format straight into and out of an ns-3 Buffer, #46),
                     swarm-routing-base.h (SwarmRoutingBase: sockets, deferred route, prev-hop tag, ports, Execute;
                     Observer() -> ControlTx/ControlRx/RouteChanged/DataDecision/StateSize trace sources,
                     GetRouterStats, the kind-name registry SetKindNames/GetKindName),
@@ -47,7 +50,8 @@ test/               swarm-core test suite: wraps every core/test/ function as a 
                     (swarm-glue-tests.cc: a toy protocol on the base, a 2-3 node scenario per monitor, and
                     the router observer's trace sources and counters, same-seed byte-identical output
                     with and without every monitor and the observer)
-examples/           swarm-core-seed: the determinism gate's program (seeded draws + a roulette sequence through IRng)
+examples/           swarm-core-seed: the determinism gate's program (seeded draws + a roulette sequence through IRng);
+                    swarm-core-queue-bench: dev-only drain cost of the deferred queue (#46), not run by CI
 tools/release/      dist.sh: the release asset (swarm-core-<ver>.tar.gz), checked in a clean ns3-dev tree; `make dist` — MIT OR GPL-2.0-only
 .cz.toml, VERSION   Commitizen config and the version it bumps; releases run through release.yml
 .github/workflows/  ci.yml (reusable-ns3-ci: strict warnings, coverage, determinism, format, headers), pr-title.yml,

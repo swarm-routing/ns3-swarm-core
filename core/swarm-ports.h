@@ -16,7 +16,9 @@
 
 #include "swarm-types.h"
 
+#include <cstdint>
 #include <functional>
+#include <utility>
 #include <vector>
 
 namespace swarm::core {
@@ -47,11 +49,30 @@ public:
     virtual std::vector<NodeAddress> neighbors() const = 0;
 };
 
+/// A cancellable timer (#46): what ITimerScheduler::scheduleCancellable
+/// returns. kNoTimer is "nothing to cancel".
+using TimerHandle = std::uint64_t;
+inline constexpr TimerHandle kNoTimer = 0;
+
 /// Deferred execution: periodic ant generation, table maintenance, timeouts.
 class ITimerScheduler {
 public:
     virtual ~ITimerScheduler() = default;
     virtual void schedule(Time delay, std::function<void()> callback) = 0;
+
+    /// As schedule, and returns a handle cancel() takes, so a stale timeout
+    /// (a discovery answered, a resend acknowledged) never runs. Additive: a
+    /// scheduler that does not override it schedules as schedule() and
+    /// returns kNoTimer, and cancel() is then a no-op, so a core that cancels
+    /// must still tolerate its callback running.
+    virtual TimerHandle scheduleCancellable(Time delay, std::function<void()> callback) {
+        schedule(delay, std::move(callback));
+        return kNoTimer;
+    }
+    /// Cancels a timer scheduleCancellable returned that has not run yet.
+    /// kNoTimer, a timer that already ran, and one already cancelled are
+    /// no-ops.
+    virtual void cancel(TimerHandle /*timer*/) {}
 };
 
 /// Node-local MAC-layer signals for a congestion-aware per-hop cost. The
