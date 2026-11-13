@@ -312,6 +312,7 @@ Code says the plugin is missing (it was called
 | Give a repository its docs/references.bib, or review it: every paper and org release it relies on, confirmed from Crossref, DataCite or Zenodo (a work with no DOI, such as a thesis, from its publisher's or institution's record, with its url), DOI links first, the fidelity Sources table and CITATION.cff references generated from it | `swarm-routing/.github` `tools/fidelity/fidelity.py` (bib), `tools/zenodo/zenodo.py` | `references` |
 | Take open pull requests from review to merge: CI, mergeable state and unresolved review threads in one view, each finding verified and fixed or answered, then merged when green (auto-merge where the repository has a merge queue) | `swarm-routing/.github` `tools/pr-status/pr_status.py` | `pr-shepherd` |
 | Measure what a Claude Code session loads from the agent files (`CLAUDE.md` and its `@` imports, or `AGENTS.md` alone), or where a finished Claude Code session's tokens went, before cutting or adding agent text | `swarm-routing/skills` `tools/token-audit/token_audit.py` | `token-audit` |
+| Register a repository for the OpenSSF Best Practices badge, propose its answers and check they stay current | `swarm-routing/.github` `tools/bestpractices/bestpractices.py` | `bestpractices` |
 
 A skill only this repository uses lives in its own `.claude/skills/`; a skill
 two repositories need moves to the plugin. Skills that file, cite and extract
