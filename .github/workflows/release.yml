@@ -11,7 +11,9 @@ name: Release
 #                       (swarm-core-<ver>.tar.gz; tools/release/dist.sh), then
 #                       SBOM, checksums, signed provenance, the v<ver> tag and
 #                       the GitHub release.
-# The `image` job then publishes ghcr.io/swarm-routing/ns3-swarm-core-ns3:v<ver>-{optimized,debug}
+# The `image` job then publishes ghcr.io/swarm-routing/ns3-swarm-core:v<ver>-{optimized,debug}
+# (named after the repository, swarm-routing/.github#370; v0.1.0 and v0.2.0 are
+# in the frozen ns3-swarm-core-ns3)
 # with the module built in (CONTRIBUTING "Images").
 on:
   workflow_dispatch:
@@ -50,4 +52,5 @@ jobs:
     uses: swarm-routing/.github/.github/workflows/reusable-ns3-image.yml@main
     with:
       modules: swarm-core=.
+      image: ns3-swarm-core
       tag: ${{ needs.release.outputs.tag }}
