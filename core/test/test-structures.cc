@@ -153,6 +153,33 @@ void TestDedupHistoryLifetime(Checker& c) {
             "clear keeps config");
 }
 
+void TestResetContract(Checker& c) {
+    // The reset contract (#43): clear() returns each shared primitive to its
+    // freshly constructed state, configuration kept, so a protocol core can
+    // forget everything in one call on a node shutdown or crash.
+    VisitedPath p(3);
+    p.push(1);
+    p.push(2);
+    p.clear();
+    c.check(p.empty() && p.capacity() == 3 && p == VisitedPath(3), "visited path: as new");
+    c.check(p.push(4) && p.push(5) && p.push(6) && !p.push(7), "visited path: cap kept");
+
+    DedupHistory h(2, 10.0);
+    h.record(1, 1, 0.0);
+    h.record(1, 2);
+    h.clear();
+    c.check(h.size() == 0 && !h.seen(1, 1) && !h.seen(1, 2), "dedup: forgets every entry");
+    c.check(h.capacity() == 2 && h.maxAge() && *h.maxAge() == 10.0, "dedup: cap and age kept");
+    c.check(h.record(1, 1, 0.0) && !h.seen(1, 1, 10.0), "dedup: the age still applies");
+
+    PheromoneTable t(2);
+    t.set(1, 1, 0.5);
+    t.set(1, 2, 0.25);
+    t.clear();
+    c.check(t.empty() && t.capacity() == 2 && t.destinations().empty(), "pheromone: as new");
+    c.check(t.set(2, 1, 1.0) && t.set(2, 2, 1.0) && !t.set(3, 1, 1.0), "pheromone: cap kept");
+}
+
 void TestPheromoneTable(Checker& c) {
     PheromoneTable t(4);
     c.check(t.empty() && t.capacity() == 4, "new table");

@@ -66,6 +66,9 @@ void DeferredPacketQueue::Drop(const DeferredPacket& e, DeferredDropReason reaso
     case DeferredDropReason::Discarded:
         ++m_stats.discarded;
         break;
+    case DeferredDropReason::NodeDown:
+        ++m_stats.nodeDown;
+        break;
     }
     m_dropTrace(e.packet, e.header, reason);
     if (!e.ecb.IsNull()) {
@@ -161,6 +164,16 @@ void DeferredPacketQueue::Purge() {
     m_oldest = Time::Max();
     for (const auto& e : m_queue) {
         m_oldest = std::min(m_oldest, e.enqueued);
+    }
+}
+
+void DeferredPacketQueue::Flush() {
+    // Out of the queue first: an error callback may re-enter it.
+    std::deque<DeferredPacket> all;
+    all.swap(m_queue);
+    m_oldest = Time::Max();
+    for (const auto& e : all) {
+        Drop(e, DeferredDropReason::NodeDown);
     }
 }
 

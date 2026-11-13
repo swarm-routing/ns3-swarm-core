@@ -14,6 +14,7 @@ build_lib(
     core/swarm-observer.cc
     core/swarm-pheromone-table.cc
     core/swarm-selection.cc
+    helper/swarm-lifecycle-helper.cc
     helper/swarm-routing-helper.cc
     model/swarm-core.cc
     model/swarm-deferred-packet-queue.cc
@@ -33,6 +34,7 @@ build_lib(
     core/swarm-types.h
     core/swarm-visited-path.h
     core/swarm-wire.h
+    helper/swarm-lifecycle-helper.h
     helper/swarm-routing-helper.h
     model/swarm-core.h
     model/swarm-deferred-packet-queue.h
