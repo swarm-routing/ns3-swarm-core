@@ -36,6 +36,31 @@ How to work here, for people and AI agents alike: [AGENTS.md](AGENTS.md) has
 the rules and how to build and verify; the release plan is [docs/roadmap.md](docs/roadmap.md); the org conventions are in
 [CONTRIBUTING.md](https://github.com/swarm-routing/.github/blob/main/CONTRIBUTING.md).
 
+## Use core/ from another CMake project
+
+`core/` needs no ns-3: a C++20 compiler and CMake 3.20. Added by another
+project, its `CMakeLists.txt` defines the static library `swarm_core` (alias
+`swarm::core`) and nothing else: no test target, no entry in your `ctest`, and
+its strict warnings stay on its own sources, never as errors. Pin a commit:
+
+```cmake
+include(FetchContent)
+FetchContent_Declare(swarm_core
+  GIT_REPOSITORY https://github.com/swarm-routing/ns3-swarm-core.git
+  GIT_TAG <the 40-character commit you pin>
+  SOURCE_SUBDIR core)
+FetchContent_MakeAvailable(swarm_core)
+target_link_libraries(my_protocol_core PUBLIC swarm::core)   # #include "swarm-ports.h", ...
+```
+
+With a checkout on disk, `add_subdirectory(/path/to/ns3-swarm-core/core swarm-core)`
+does the same. A file added to `core/` then reaches you with the next pin, with
+no edit on your side. The pin must be a commit that has
+`core/swarm-core-sources.cmake` (any after v0.1.0's). `core/` is
+`MIT OR GPL-2.0-only` ([LICENSING.md](LICENSING.md)); a scratch project that
+does exactly this is built on every PR (`core/test/consumer/`,
+`tools/checks/check-core-consumer.sh`).
+
 <!-- org-sync:begin citing -->
 ## Releases & citing
 

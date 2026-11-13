@@ -29,7 +29,9 @@ core/               simulator-free primitives, namespace swarm::core — MIT OR 
                     swarm-selection.{h,cc} (roulette, evaporationFactor), swarm-route-decision.h,
                     swarm-link-metric.h (ILinkMetric), swarm-observer.{h,cc} (IRouterObserver, KindName,
                     CountingObserver -> RouterStats: bounded counters); CMakeLists.txt builds it alone, no ns-3
+                    swarm-core-sources.cmake: the files of core/, listed once for both builds (#100)
 core/test/          the core tests, one function per primitive (MIT OR GPL-2.0-only); run by ctest and by test.py
+core/test/consumer/ a scratch CMake project that links swarm::core, built by tools/checks/check-core-consumer.sh (#100)
 core/bench/         dev-only microbenchmarks (MIT OR GPL-2.0-only; Google Benchmark, pinned, -DSWARM_CORE_BENCH=ON;
                     exempt from the core-include check, as it includes <benchmark/benchmark.h>)
 model/              ns-3 glue — GPL-2.0-only; each file derived from AntHocNet names its source file and commit:
@@ -56,9 +58,12 @@ test/               swarm-core test suite: wraps every core/test/ function as a 
                     with and without every monitor and the observer)
 examples/           swarm-core-seed: the determinism gate's program (seeded draws + a roulette sequence through IRng);
                     swarm-core-queue-bench: dev-only drain cost of the deferred queue (#46), not run by CI
+tools/checks/       check-core-consumer.sh: core/ in another CMake project gets the library alone (no test target, no ctest
+                    entry, no -Werror of ours); run by the `core` check — MIT OR GPL-2.0-only
 tools/release/      dist.sh: the release asset (swarm-core-<ver>.tar.gz), checked in a clean ns3-dev tree; `make dist` — MIT OR GPL-2.0-only
 .cz.toml, VERSION   Commitizen config and the version it bumps; releases run through release.yml
-.github/workflows/  ci.yml (reusable-ns3-ci: strict warnings, coverage, determinism, format, headers), pr-title.yml,
+.github/workflows/  ci.yml (reusable-ns3-ci: strict warnings, coverage, determinism, format, headers), core.yml (check `core`:
+                    core/ alone at C++20, strict warnings, ctest, again under ASan + UBSan, the consumer check; #99), pr-title.yml,
                     release.yml (the org reusable-release.yml, then the ns3-swarm-core-ns3 image)
 ```
 
@@ -78,12 +83,18 @@ docker run --rm -v "$PWD:/src/swarm-core:ro" ghcr.io/swarm-routing/ns3-dev:lates
     ns3-build-contrib --strict-warnings --test swarm-core=/src/swarm-core
 ```
 
-`core/` alone, with no ns-3 tree (plain CMake; the same strict warnings as CI,
-`-DSWARM_CORE_SANITIZE=ON` for ASan + UBSan as the sanitized leg):
+`core/` alone, with no ns-3 tree, at C++20 as every protocol repository builds
+it (plain CMake; the same strict warnings as CI, `-DSWARM_CORE_SANITIZE=ON` for
+ASan + UBSan as the sanitized leg). The `core` check (`.github/workflows/core.yml`)
+runs these on every PR:
 
 ```bash
 cmake -S core -B build/core && cmake --build build/core && ctest --test-dir build/core
+tools/checks/check-core-consumer.sh   # core/ added by another CMake project: the library alone (#100)
 ```
+
+A file added to `core/` goes into `core/swarm-core-sources.cmake` only: both
+builds read it.
 
 Microbenchmarks of the per-packet primitives (`core/bench/`, dev-only; fetches
 Google Benchmark at the commit and hash pinned in `core/CMakeLists.txt`; CI
@@ -438,7 +449,7 @@ because the issue threads were thorough. Caveman the chat, not the record.
 | Report a protocol's internals (control by kind, route changes, data decisions, state footprint) | its core calls `swarm::core::IRouterObserver` (`core/swarm-observer.h`), the adapter passes `&Observer()` and registers its `KindName` table; read with the trace sources or `SwarmRoutingHelper::CollectStats` (#42; consumer: swarm-routing/ns3-tools#91) |
 | Script node failures (shutdown, crash, restart) the same way for every arm | `SwarmLifecycleHelper` (`helper/swarm-lifecycle-helper.h`: times or a `<time s> <node> <op>` file); a protocol clears and restarts its state in `DoNodeShutdown`/`DoNodeCrash`/`DoNodeStart` on `SwarmRoutingBase`, and its core uses each primitive's `clear()` (the reset contract) (#43) |
 | Write a protocol's ns-3 adapter | derive from `SwarmRoutingBase` (`model/swarm-routing-base.h`: the hooks, services and ports), install with `SwarmRoutingHelper`; the toy protocol in `test/swarm-glue-tests.cc` is a minimal example |
-| Merge a change to `core/` | every protocol repository that pins swarm-core (ARA, BeeAdHoc, Termite, HOPNET) goes red on its `swarm-core / pin` check as soon as it lands, and its open PRs are blocked: open the pin-bump PR in each (`SWARM_CORE_REF` in `core/CMakeLists.txt`, the `Makefile`, every workflow's `core-deps`; the failing check names each place), verified with its core tests, until org-bot opens them (swarm-routing/.github#190, #208) |
+| Merge a change to `core/` | every protocol repository that pins swarm-core (ARA, BeeAdHoc, Termite, HOPNET) goes red on its `swarm-core / pin` check as soon as it lands, and its open PRs are blocked: open the pin-bump PR in each (`SWARM_CORE_REF` in `core/CMakeLists.txt`, the `Makefile`, every workflow's `core-deps`; the failing check names each place), verified with its core tests, until org-bot opens them (swarm-routing/.github#190, #208). A new `core/` file goes into `core/swarm-core-sources.cmake` only; a consumer that links `swarm::core` (README "Use core/ from another CMake project") needs no edit for it, one that still lists swarm-core's `.cc` files itself (`swarm_core_primitives`, the four today; #100) adds the file there in its pin-bump PR |
 | Source of the glue | AntHocNet `ns3/baselines/adaptive/model/adaptive-routing-base.*`, `ns3/anthocnet/model/anthocnet-{adapters,rqueue,routing-protocol}.*` (GPL-2.0-only → `model/` here) |
 | Wire-format discipline | AntHocNet `docs/wire-format.md`, ADR-0006 |
 | Link-metric seam history | AntHocNet #142 (closed), #145, #146 |
