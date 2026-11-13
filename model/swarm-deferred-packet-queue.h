@@ -30,16 +30,19 @@ enum class DeferredDropReason : uint8_t {
     Overflow = 0,   ///< the queue was full: the oldest packet made room (MaxPackets)
     Expired = 1,    ///< it waited longer than MaxAge for a route
     Discarded = 2,  ///< the protocol gave up on its destination (DiscardPending)
+    NodeDown = 3,   ///< the node shut down or crashed (Flush, #43)
 };
 
 /// What the queue has done over a run. A probe reads it at the end; the
-/// counts add up: enqueued == released + overflow + expired + discarded + Size().
+/// counts add up: enqueued == released + overflow + expired + discarded +
+/// nodeDown + Size().
 struct DeferredQueueStats {
     uint64_t enqueued = 0;
     uint64_t released = 0;
     uint64_t overflow = 0;
     uint64_t expired = 0;
     uint64_t discarded = 0;
+    uint64_t nodeDown = 0;          ///< dropped by Flush: the node went down (#43)
     double releasedHoldSumS = 0.0;  ///< total wait of the released packets
     double releasedHoldMaxS = 0.0;  ///< longest wait of a released packet
 };
@@ -79,6 +82,10 @@ public:
 
     /// Drops every packet older than MaxAge through its error callback.
     void Purge();
+
+    /// Drops every packet through its error callback (NodeDown), oldest
+    /// first: the node shut down or crashed (#43).
+    void Flush();
 
     /// Packets to `dst` waiting (expired ones excluded).
     bool Has(Ipv4Address dst) const;

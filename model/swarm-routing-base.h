@@ -88,6 +88,20 @@ private:
     Ipv4Address m_from;
 };
 
+/// A node's lifecycle state (#43).
+enum class SwarmNodeState : uint8_t {
+    Up = 0,
+    Down = 1,
+};
+
+/// The lifecycle operations, after INET's NodeStartOperation,
+/// NodeShutdownOperation and NodeCrashOperation (#43).
+enum class SwarmLifecycleOp : uint8_t {
+    Start = 0,     ///< the node comes (back) up
+    Shutdown = 1,  ///< graceful: the protocol may announce it is leaving
+    Crash = 2,     ///< abrupt: nothing is sent, peers are not told
+};
+
 class SwarmRoutingBase : public Ipv4RoutingProtocol {
 public:
     static TypeId GetTypeId();
@@ -99,6 +113,26 @@ public:
     virtual int64_t AssignStreams(int64_t stream);
 
     Ptr<DeferredPacketQueue> GetDeferredQueue() const { return m_queue; }
+
+    // --- node lifecycle (#43) -------------------------------------------------
+
+    /// Graceful shutdown: DoNodeShutdown runs first, while the node is still
+    /// up (so the protocol can send its leaving control), then the base
+    /// cancels every timer it owns (Timers() and the purge timer), drops every
+    /// deferred packet as NodeDown, and refuses routing until Start. A no-op
+    /// when already down. Completes in zero simulated time.
+    void Shutdown();
+    /// Crash: the node is down at once, so DoNodeCrash can send nothing; then
+    /// the same teardown as Shutdown. A no-op when already down.
+    void Crash();
+    /// Brings a down node back: routing is accepted again, the purge timer
+    /// restarts, then DoNodeStart re-initialises the protocol. A no-op when up.
+    void Start();
+    SwarmNodeState GetNodeState() const { return m_state; }
+    bool IsDown() const { return m_state == SwarmNodeState::Down; }
+
+    /// Lifecycle: the node changed state (`state`, by `op`).
+    using LifecycleTracedCallback = void (*)(SwarmNodeState state, SwarmLifecycleOp op);
 
     // --- the router observer ---------------------------------------------------
 
@@ -196,10 +230,23 @@ protected:
     virtual void OnDataUndelivered(Ptr<const Packet> /*p*/, const Ipv4Header& /*header*/,
                                    Ipv4Address /*failedNext*/, Ipv4Address /*prev*/) {}
 
+    /// Lifecycle hooks (#43). Each defaults to nothing; the base does the
+    /// common part (timers, deferred queue, refusing routing) around them.
+    /// DoNodeShutdown: the node is still up; send the protocol's leaving
+    /// control here if it has one, then clear the protocol's state.
+    virtual void DoNodeShutdown() {}
+    /// DoNodeCrash: the node is already down (nothing it sends leaves); clear
+    /// the protocol's state.
+    virtual void DoNodeCrash() {}
+    /// DoNodeStart: the node is up again; re-initialise and restart periodic
+    /// timers, with fresh jitter drawn from Rng() (org rule 5).
+    virtual void DoNodeStart() {}
+
     // --- services
     // ----------------------------------------------------------------
 
-    /// One-hop broadcast of a control message on every interface.
+    /// One-hop broadcast of a control message on every interface. Nothing
+    /// is sent while the node is down; neither is a unicast.
     void BroadcastControl(Ptr<Packet> p);
     /// One-hop unicast of a control message to a neighbour.
     void UnicastControl(Ptr<Packet> p, Ipv4Address neighbor);
@@ -292,6 +339,8 @@ private:
     void WifiLinkFailed(Ipv4Address neighbor, Mac48Address mac);
     void WifiUndelivered(Ptr<const Packet> datagram, Ipv4Address neighbor);
     void IslLinkChanged(Ipv4Address peer, bool up);
+    /// The common teardown of Shutdown and Crash.
+    void GoDown(SwarmLifecycleOp op);
 
     /// Counts every event and fires the matching trace source.
     class TracingObserver : public swarm::core::IRouterObserver {
@@ -344,6 +393,8 @@ private:
     /// Ipv4L3Protocol's forwarding callback, the same for every packet: kept
     /// from RouteInput so ResendData can send outside it.
     UnicastForwardCallback m_ucb;
+    SwarmNodeState m_state = SwarmNodeState::Up;
+    TracedCallback<SwarmNodeState, SwarmLifecycleOp> m_lifecycle;
     /// The cached ports (raw: they live in the node's aggregate, which holds
     /// this protocol too; dropped at dispose).
     mutable bool m_portsStale = true;

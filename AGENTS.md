@@ -7,7 +7,7 @@ before changing anything. Org-wide conventions:
 
 ## What this repo is
 
-**Status: primitives in `core/` (#8), ns-3 glue in `model/` and `helper/` (#9).** CI runs every org quality gate on the module. API version 2 (`kSwarmCoreApiVersion`).
+**Status: primitives in `core/` (#8), ns-3 glue in `model/` and `helper/` (#9), node lifecycle (#43).** CI runs every org quality gate on the module. API version 2 (`kSwarmCoreApiVersion`).
 
 The shared ns-3 contrib module `swarm-core` (`libns3.<ver>-swarm-core`) every
 swarm-routing protocol links against: simulator-agnostic C++20 primitives
@@ -40,12 +40,16 @@ model/              ns-3 glue — GPL-2.0-only; each file derived from AntHocNet
                     the core wire format straight into and out of an ns-3 Buffer, #46),
                     swarm-routing-base.h (SwarmRoutingBase: sockets, deferred route, prev-hop tag, ports, Execute;
                     Observer() -> ControlTx/ControlRx/RouteChanged/DataDecision/StateSize trace sources,
-                    GetRouterStats, the kind-name registry SetKindNames/GetKindName),
+                    GetRouterStats, the kind-name registry SetKindNames/GetKindName; node lifecycle #43:
+                    Shutdown/Crash/Start, the DoNodeShutdown/DoNodeCrash/DoNodeStart hooks, the Lifecycle
+                    trace source, NodeDown drops),
                     swarm-wifi-link-monitor.h (ILinkState + ILinkQuality + retry-limit LinkFailure),
                     swarm-isl-link-monitor.h (INeighborProvider + ILinkState + LinkChange on p2p),
                     swarm-energy-metric-hook.h (IEnergy from an EnergySource's RemainingEnergy trace)
 helper/             swarm-routing-helper.h: SwarmRoutingHelper (one-call Install, AssignStreams, SetKindNames,
-                    CollectStats -> SwarmRoutingStats), SwarmMonitorHelper
+                    CollectStats -> SwarmRoutingStats), SwarmMonitorHelper; swarm-lifecycle-helper.h:
+                    SwarmLifecycleHelper (shutdown, crash, start at given times or from a schedule file, the
+                    protocol's lifecycle plus Ipv4 SetDown/SetUp, so stock arms see the same failure; #43)
 test/               swarm-core test suite: wraps every core/test/ function as a TestCase, plus the glue's
                     (swarm-glue-tests.cc: a toy protocol on the base, a 2-3 node scenario per monitor, and
                     the router observer's trace sources and counters, same-seed byte-identical output
@@ -432,6 +436,7 @@ because the issue threads were thorough. Caveman the chat, not the record.
 | Source of the primitives | AntHocNet `core/include/anthocnet/core/`, `core/src/` (MIT OR GPL-2.0-only → `core/` here); each `core/` file names its source file and commit |
 | Use or extend a primitive | `core/swarm-*.h` (the API, documented in place), its test in `core/test/`, the list in `core/test/all-tests.cc` |
 | Report a protocol's internals (control by kind, route changes, data decisions, state footprint) | its core calls `swarm::core::IRouterObserver` (`core/swarm-observer.h`), the adapter passes `&Observer()` and registers its `KindName` table; read with the trace sources or `SwarmRoutingHelper::CollectStats` (#42; consumer: swarm-routing/ns3-tools#91) |
+| Script node failures (shutdown, crash, restart) the same way for every arm | `SwarmLifecycleHelper` (`helper/swarm-lifecycle-helper.h`: times or a `<time s> <node> <op>` file); a protocol clears and restarts its state in `DoNodeShutdown`/`DoNodeCrash`/`DoNodeStart` on `SwarmRoutingBase`, and its core uses each primitive's `clear()` (the reset contract) (#43) |
 | Write a protocol's ns-3 adapter | derive from `SwarmRoutingBase` (`model/swarm-routing-base.h`: the hooks, services and ports), install with `SwarmRoutingHelper`; the toy protocol in `test/swarm-glue-tests.cc` is a minimal example |
 | Merge a change to `core/` | every protocol repository that pins swarm-core (ARA, BeeAdHoc, Termite, HOPNET) goes red on its `swarm-core / pin` check as soon as it lands, and its open PRs are blocked: open the pin-bump PR in each (`SWARM_CORE_REF` in `core/CMakeLists.txt`, the `Makefile`, every workflow's `core-deps`; the failing check names each place), verified with its core tests, until org-bot opens them (swarm-routing/.github#190, #208) |
 | Source of the glue | AntHocNet `ns3/baselines/adaptive/model/adaptive-routing-base.*`, `ns3/anthocnet/model/anthocnet-{adapters,rqueue,routing-protocol}.*` (GPL-2.0-only → `model/` here) |

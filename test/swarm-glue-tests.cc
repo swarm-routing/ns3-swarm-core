@@ -37,6 +37,7 @@
 
 #include <array>
 #include <cmath>
+#include <fstream>
 #include <map>
 #include <sstream>
 #include <string>
@@ -108,6 +109,17 @@ public:
     std::vector<bool> resent;
     bool backtrack = false;
     Ipv4Address noRouteFrom;  ///< no next hop for a packet from this neighbour
+
+    /// Lifecycle (#43): what each hook saw, the routes DoNodeStart restores,
+    /// and a core timer that a shutdown or crash must cancel.
+    std::vector<std::string> lifecycleLog;
+    std::map<Ipv4Address, Ipv4Address> staticRoutes;
+    bool probeRan = false;
+    static constexpr uint32_t kLeavingSize = 5;
+
+    void ArmProbe(double delay) {
+        Timers().schedule(delay, [this]() { probeRan = true; });
+    }
 
     void SendHelloNow() {
         BroadcastControl(Create<Packet>(4));
@@ -204,6 +216,26 @@ protected:
     }
 
     void OnLinkFailure(Ipv4Address neighbor) override { failures.push_back(neighbor); }
+
+    // A graceful shutdown announces it is leaving; a crash tries to as well,
+    // and the base must let nothing out. Both forget the routes; a restart
+    // brings back the static ones.
+    void DoNodeShutdown() override {
+        lifecycleLog.emplace_back("shutdown");
+        BroadcastControl(Create<Packet>(kLeavingSize));
+        routes.clear();
+    }
+
+    void DoNodeCrash() override {
+        lifecycleLog.emplace_back("crash");
+        BroadcastControl(Create<Packet>(kLeavingSize));
+        routes.clear();
+    }
+
+    void DoNodeStart() override {
+        lifecycleLog.emplace_back("start");
+        routes = staticRoutes;
+    }
 
     void OnLinkUp(Ipv4Address neighbor) override { ups.push_back(neighbor); }
 
@@ -633,6 +665,188 @@ private:
         cut.u16();
         cut.i32();
         NS_TEST_EXPECT_MSG_EQ(cut.ok(), false, "a short scratch fails the reader closed");
+    }
+};
+
+// --- node lifecycle (#43)
+// ----------------------------------------------------------
+
+uint32_t LeavingFrom(Ptr<ToyProtocol> toy) {
+    uint32_t n = 0;
+    for (const auto& l : toy->controlLog) {
+        n += l.size() > 2 && l.compare(l.size() - 2, 2, " 5") == 0 ? 1 : 0;
+    }
+    return n;
+}
+
+class LifecycleTestCase : public TestCase {
+public:
+    LifecycleTestCase()
+        : TestCase("glue: shutdown and crash cancel timers, flush the queue, refuse "
+                   "routing; only shutdown announces") {}
+
+private:
+    void DoRun() override {
+        SwarmCoreSeed(1);
+        Line line("10Mbps");
+        Ptr<Node> n0 = line.nodes.Get(0);
+        Ptr<Node> n1 = line.nodes.Get(1);
+        Ptr<Node> n2 = line.nodes.Get(2);
+        const Ipv4Address n0a = Addr(n0, 1);
+        const Ipv4Address n2a = Addr(n2, 1);
+        Toy(n1)->routes[n0a] = n0a;
+
+        std::vector<std::string> lifecycle;
+        Toy(n0)->TraceConnectWithoutContext(
+            "Lifecycle",
+            MakeBoundCallback(
+                +[](std::vector<std::string>* out, SwarmNodeState st, SwarmLifecycleOp op) {
+                    out->push_back(std::to_string(static_cast<int>(st)) + ":" +
+                                   std::to_string(static_cast<int>(op)));
+                },
+                &lifecycle));
+        std::map<DeferredDropReason, int> drops;
+        Toy(n0)->GetDeferredQueue()->TraceConnectWithoutContext(
+            "Drop", MakeBoundCallback(
+                        +[](std::map<DeferredDropReason, int>* m, Ptr<const Packet>,
+                            const Ipv4Header&, DeferredDropReason r) { ++(*m)[r]; },
+                        &drops));
+
+        std::vector<std::string> rx0;
+        Ptr<Socket> sink0 = Sink(n0, &rx0);
+        Ptr<Socket> src0 = Source(n0);
+        Ptr<Socket> src1 = Source(n1);
+        bool downDuring = false;
+        int sendWhileDown = 0;
+        Simulator::Schedule(Seconds(0.5), [&]() {
+            SendUdp(src0, n2a, 100);  // no route at n0: deferred
+            Toy(n0)->ArmProbe(2.5);   // would run at 3.0
+        });
+        Simulator::Schedule(Seconds(1.0), [&]() { Toy(n0)->Shutdown(); });
+        Simulator::Schedule(Seconds(1.5), [&]() {
+            downDuring = Toy(n0)->IsDown();
+            sendWhileDown = src0->SendTo(Create<Packet>(100), 0, InetSocketAddress(n2a, kDataPort));
+            SendUdp(src1, n0a, 100);  // reaches n0, which routes nothing while down
+            Toy(n0)->Shutdown();      // already down: a no-op
+        });
+        Simulator::Schedule(Seconds(2.0), [&]() { Toy(n2)->Crash(); });
+        Simulator::Schedule(Seconds(4.0), [&]() { Toy(n0)->Start(); });
+        Simulator::Schedule(Seconds(4.5), [&]() { SendUdp(src1, n0a, 100); });
+        Simulator::Stop(Seconds(5));
+        Simulator::Run();
+
+        const DeferredQueueStats& s = Toy(n0)->GetDeferredQueue()->Stats();
+        NS_TEST_EXPECT_MSG_EQ(s.nodeDown, 1u, "the held packet is dropped as NodeDown");
+        NS_TEST_EXPECT_MSG_EQ(drops[DeferredDropReason::NodeDown], 1, "through the Drop trace");
+        NS_TEST_EXPECT_MSG_EQ(s.enqueued, 1u, "nothing is deferred while down");
+        NS_TEST_EXPECT_MSG_EQ(s.enqueued,
+                              s.released + s.overflow + s.expired + s.discarded + s.nodeDown +
+                                  Toy(n0)->GetDeferredQueue()->Size(),
+                              "the counts add up");
+        NS_TEST_EXPECT_MSG_EQ(Toy(n0)->probeRan, false, "the core's timer was cancelled");
+        NS_TEST_EXPECT_MSG_EQ(downDuring, true, "down between Shutdown and Start");
+        NS_TEST_EXPECT_MSG_EQ(sendWhileDown, -1, "RouteOutput refuses while down");
+        NS_TEST_EXPECT_MSG_EQ(rx0.size(), 1u, "RouteInput refuses while down, delivers after");
+        NS_TEST_EXPECT_MSG_EQ(Toy(n0)->IsDown(), false, "up after Start");
+        NS_TEST_EXPECT_MSG_EQ(
+            (lifecycle == std::vector<std::string>{"1:1", "0:0"}), true,
+            "Lifecycle trace: (Down, Shutdown), (Up, Start); the repeat is silent");
+        NS_TEST_EXPECT_MSG_EQ(
+            (Toy(n0)->lifecycleLog == std::vector<std::string>{"shutdown", "start"}), true,
+            "n0's hooks");
+        NS_TEST_EXPECT_MSG_EQ((Toy(n2)->lifecycleLog == std::vector<std::string>{"crash"}), true,
+                              "n2's hook");
+        // Shutdown and crash differ observably: n1 heard n0 leave, not n2.
+        NS_TEST_EXPECT_MSG_EQ(LeavingFrom(Toy(n1)), 1u, "one leaving control, from n0");
+        bool fromN0 = false;
+        for (const auto& l : Toy(n1)->controlLog) {
+            std::ostringstream want;
+            want << n0a << "->";
+            fromN0 |= l.find(want.str()) != std::string::npos;
+        }
+        NS_TEST_EXPECT_MSG_EQ(fromN0, true, "the leaving control came from n0");
+        Simulator::Destroy();
+    }
+};
+
+/// n0 - n1 - n2 - n3 - n4 over point-to-point links, n0 sending to n4 every
+/// 250 ms; the helper crashes n2 at 2 s and restarts it at 4 s from a
+/// schedule file. Returns the deliveries at n4 (time in ns, source).
+std::vector<std::string> RunChainWithFailures(const std::string& schedule, uint32_t seed) {
+    SwarmCoreSeed(seed);
+    NodeContainer nodes;
+    nodes.Create(5);
+    PointToPointHelper p2p;
+    p2p.SetChannelAttribute("Delay", StringValue("2ms"));
+    p2p.SetDeviceAttribute("DataRate", StringValue("10Mbps"));
+    std::vector<NetDeviceContainer> links;
+    for (uint32_t i = 0; i + 1 < 5; ++i) {
+        links.push_back(p2p.Install(nodes.Get(i), nodes.Get(i + 1)));
+    }
+    SwarmRoutingHelper toy("ns3::swarmtest::ToyProtocol");
+    toy.Install(nodes);
+    toy.AssignStreams(nodes, 0);
+    Ipv4AddressHelper a;
+    for (uint32_t i = 0; i < links.size(); ++i) {
+        std::ostringstream base;
+        base << "10.2." << i << ".0";
+        a.SetBase(base.str().c_str(), "255.255.255.0");
+        a.Assign(links[i]);
+    }
+    const Ipv4Address dst("10.2.3.2");  // n4 on its only link
+    for (uint32_t i = 0; i < 4; ++i) {
+        std::ostringstream next;
+        next << "10.2." << i << ".2";
+        Toy(nodes.Get(i))->staticRoutes[dst] = Ipv4Address(next.str().c_str());
+        Toy(nodes.Get(i))->routes = Toy(nodes.Get(i))->staticRoutes;
+    }
+    std::ofstream(schedule) << "# time node op\n2.0 2 crash\n\n4.0 2 start  # back\n";
+    SwarmLifecycleHelper().ScheduleFile(schedule, nodes);
+
+    auto* rx = new std::vector<std::string>();
+    Ptr<Socket> sink = Sink(nodes.Get(4), rx);
+    Ptr<Socket> src = Source(nodes.Get(0));
+    for (int k = 2; k < 24; ++k) {
+        Simulator::Schedule(MilliSeconds(250 * k), [src, dst]() { SendUdp(src, dst, 100); });
+    }
+    Simulator::Stop(Seconds(6.5));
+    Simulator::Run();
+    Simulator::Destroy();
+    std::vector<std::string> out = *rx;
+    delete rx;
+    return out;
+}
+
+class LifecycleHelperTestCase : public TestCase {
+public:
+    LifecycleHelperTestCase()
+        : TestCase("glue: SwarmLifecycleHelper crashes and restarts a chain node; delivery "
+                   "recovers; same seed, same bytes") {}
+
+private:
+    void DoRun() override {
+        const std::string schedule = CreateTempDirFilename("failures.txt");
+        const std::vector<std::string> first = RunChainWithFailures(schedule, 3);
+        uint32_t before = 0;
+        uint32_t during = 0;
+        uint32_t after = 0;
+        for (const auto& l : first) {
+            const double t = std::stod(l.substr(0, l.find(' '))) * 1e-9;
+            (t < 2.0 ? before : t < 4.0 ? during : after) += 1;
+        }
+        NS_TEST_EXPECT_MSG_EQ(before, 6u, "delivered before the crash (0.5 .. 1.75 s)");
+        NS_TEST_EXPECT_MSG_EQ(during, 0u, "nothing through the crashed relay");
+        NS_TEST_EXPECT_MSG_EQ(after, 8u, "delivery recovers after the restart (4.0 .. 5.75 s)");
+        // Determinism (org rule 5): the same seed and schedule, the same bytes.
+        NS_TEST_EXPECT_MSG_EQ((RunChainWithFailures(schedule, 3) == first), true,
+                              "byte-identical rerun");
+
+        SwarmLifecycleOp op = SwarmLifecycleOp::Start;
+        NS_TEST_EXPECT_MSG_EQ(SwarmLifecycleHelper::ParseOp("shutdown", op) &&
+                                  op == SwarmLifecycleOp::Shutdown,
+                              true, "parse shutdown");
+        NS_TEST_EXPECT_MSG_EQ(SwarmLifecycleHelper::ParseOp("reboot", op), false,
+                              "an unknown operation is refused");
     }
 };
 
@@ -1365,6 +1579,8 @@ std::vector<TestCase*> MakeGlueTestCases() {
             new UndeliveredTestCase(UndeliveredTestCase::Variant::MacFragments),
             new EnergyHookTestCase,
             new ObserverTestCase,
+            new LifecycleTestCase,
+            new LifecycleHelperTestCase,
             new DeterminismTestCase};
 }
 

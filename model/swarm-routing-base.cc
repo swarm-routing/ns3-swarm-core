@@ -116,6 +116,11 @@ TypeId SwarmRoutingBase::GetTypeId() {
                             "Queue, Drop or Deliver.",
                             MakeTraceSourceAccessor(&SwarmRoutingBase::m_dataDecision),
                             "ns3::SwarmRoutingBase::DataDecisionTracedCallback")
+            .AddTraceSource("Lifecycle",
+                            "The node changed lifecycle state (Up or Down) by an operation "
+                            "(Start, Shutdown or Crash).",
+                            MakeTraceSourceAccessor(&SwarmRoutingBase::m_lifecycle),
+                            "ns3::SwarmRoutingBase::LifecycleTracedCallback")
             .AddTraceSource("StateSize",
                             "The protocol's routing-state footprint: entries and bytes.",
                             MakeTraceSourceAccessor(&SwarmRoutingBase::m_stateSize),
@@ -388,7 +393,7 @@ Ptr<Ipv4Route> SwarmRoutingBase::LoopbackRoute(const Ipv4Header& header, Ptr<Net
 Ptr<Ipv4Route> SwarmRoutingBase::RouteOutput(Ptr<Packet> p, const Ipv4Header& header,
                                              Ptr<NetDevice> oif, Socket::SocketErrno& sockerr) {
     sockerr = Socket::ERROR_NOTERROR;
-    if (m_sockets.empty()) {
+    if (m_sockets.empty() || IsDown()) {
         sockerr = Socket::ERROR_NOROUTETOHOST;
         return nullptr;
     }
@@ -417,8 +422,8 @@ bool SwarmRoutingBase::RouteInput(Ptr<const Packet> p, const Ipv4Header& header,
                                   Ptr<const NetDevice> idev, const UnicastForwardCallback& ucb,
                                   const MulticastForwardCallback&, const LocalDeliverCallback& lcb,
                                   const ErrorCallback& ecb) {
-    if (m_sockets.empty()) {
-        return false;
+    if (m_sockets.empty() || IsDown()) {
+        return false;  // a down node routes nothing (#43)
     }
     if (m_ucb.IsNull() && !ucb.IsNull()) {
         m_ucb = ucb;
@@ -493,7 +498,7 @@ void SwarmRoutingBase::ForwardData(Ptr<const Packet> p, const Ipv4Header& header
 }
 
 bool SwarmRoutingBase::ResendData(Ptr<const Packet> p, const Ipv4Header& header, Ipv4Address next) {
-    if (m_ucb.IsNull() || InterfaceTowards(next) < 0) {
+    if (IsDown() || m_ucb.IsNull() || InterfaceTowards(next) < 0) {
         return false;
     }
     ForwardData(p, header, next, m_ucb);
@@ -510,7 +515,54 @@ void SwarmRoutingBase::Defer(Ptr<const Packet> p, const Ipv4Header& header,
     e.ucb = ucb;
     e.ecb = ecb;
     m_queue->Enqueue(e);
+    if (IsDown()) {
+        m_queue->Flush();  // an adapter deferring while down: lost as NodeDown
+        return;
+    }
     StartDiscovery(header.GetDestination());
+}
+
+// --- node lifecycle ----------------------------------------------------------------
+
+void SwarmRoutingBase::Shutdown() {
+    if (IsDown()) {
+        return;
+    }
+    DoNodeShutdown();  // still up: a leaving control goes out
+    GoDown(SwarmLifecycleOp::Shutdown);
+}
+
+void SwarmRoutingBase::Crash() {
+    if (IsDown()) {
+        return;
+    }
+    m_state = SwarmNodeState::Down;  // first: nothing the hook sends leaves
+    DoNodeCrash();
+    GoDown(SwarmLifecycleOp::Crash);
+}
+
+void SwarmRoutingBase::GoDown(SwarmLifecycleOp op) {
+    m_state = SwarmNodeState::Down;
+    m_timers.CancelAll();
+    m_purgeTimer.Cancel();
+    if (m_queue) {
+        m_queue->Flush();
+    }
+    m_lifecycle(m_state, op);
+}
+
+void SwarmRoutingBase::Start() {
+    if (!IsDown()) {
+        return;
+    }
+    m_state = SwarmNodeState::Up;
+    if (m_purgeTimer.IsRunning()) {
+        m_purgeTimer.Cancel();
+    }
+    m_purgeTimer.SetFunction(&SwarmRoutingBase::PurgeTick, this);
+    m_purgeTimer.Schedule(m_purgeInterval);
+    DoNodeStart();
+    m_lifecycle(m_state, SwarmLifecycleOp::Start);
 }
 
 void SwarmRoutingBase::PurgeTick() {
@@ -592,12 +644,18 @@ void SwarmRoutingBase::NotifyAddAddress(uint32_t, Ipv4InterfaceAddress) {}
 void SwarmRoutingBase::NotifyRemoveAddress(uint32_t, Ipv4InterfaceAddress) {}
 
 void SwarmRoutingBase::BroadcastControl(Ptr<Packet> p) {
+    if (IsDown()) {
+        return;
+    }
     for (const auto& kv : m_sockets) {
         kv.socket->SendTo(p->Copy(), 0, InetSocketAddress(kv.iface.GetBroadcast(), ControlPort()));
     }
 }
 
 void SwarmRoutingBase::UnicastControl(Ptr<Packet> p, Ipv4Address neighbor) {
+    if (IsDown()) {
+        return;
+    }
     const int32_t ifIdx = InterfaceTowards(neighbor);
     for (const auto& kv : m_sockets) {
         if (kv.ifIndex == ifIdx) {
@@ -616,7 +674,7 @@ void SwarmRoutingBase::RecvSocket(Ptr<Socket> socket) {
         return;
     }
     const Ipv4Address sender = InetSocketAddress::ConvertFrom(from).GetIpv4();
-    if (IsMyAddress(sender)) {
+    if (IsDown() || IsMyAddress(sender)) {
         return;
     }
     Ipv4Address receiver;
@@ -633,12 +691,15 @@ void SwarmRoutingBase::RecvSocket(Ptr<Socket> socket) {
 // --- link failures -----------------------------------------------------------------
 
 void SwarmRoutingBase::WifiLinkFailed(Ipv4Address neighbor, Mac48Address) {
-    if (neighbor != Ipv4Address()) {
+    if (neighbor != Ipv4Address() && !IsDown()) {
         OnLinkFailure(neighbor);
     }
 }
 
 void SwarmRoutingBase::WifiUndelivered(Ptr<const Packet> datagram, Ipv4Address neighbor) {
+    if (IsDown()) {
+        return;
+    }
     Ptr<Packet> p = datagram->Copy();
     Ipv4Header header;
     p->RemoveHeader(header);
@@ -663,6 +724,9 @@ void SwarmRoutingBase::WifiUndelivered(Ptr<const Packet> datagram, Ipv4Address n
 }
 
 void SwarmRoutingBase::IslLinkChanged(Ipv4Address peer, bool up) {
+    if (IsDown()) {
+        return;  // a down node hears nothing; DoNodeStart re-learns its links
+    }
     if (up) {
         OnLinkUp(peer);
     } else {
