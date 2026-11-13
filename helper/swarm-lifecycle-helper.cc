@@ -7,6 +7,7 @@
 #include "ns3/log.h"
 #include "ns3/simulator.h"
 
+#include <cmath>
 #include <fstream>
 #include <sstream>
 
@@ -104,18 +105,20 @@ uint32_t SwarmLifecycleHelper::ScheduleFile(const std::string& path,
         if (hash != std::string::npos) {
             line.erase(hash);
         }
+        if (line.find_first_not_of(" \t\r") == std::string::npos) {
+            continue;  // blank or comment-only
+        }
         std::istringstream fields(line);
         double seconds = 0.0;
         uint32_t index = 0;
         std::string name;
-        if (!(fields >> seconds)) {
-            continue;  // blank or comment-only
-        }
         std::string rest;
         SwarmLifecycleOp op = SwarmLifecycleOp::Start;
-        NS_ABORT_MSG_UNLESS((fields >> index >> name) && !(fields >> rest) && ParseOp(name, op),
+        NS_ABORT_MSG_UNLESS((fields >> seconds >> index >> name) && !(fields >> rest) &&
+                                ParseOp(name, op),
                             path << ":" << lineNo << ": expected `<time s> <node> <op>`");
-        NS_ABORT_MSG_UNLESS(seconds >= 0.0, path << ":" << lineNo << ": negative time");
+        NS_ABORT_MSG_UNLESS(std::isfinite(seconds) && seconds >= 0.0,
+                            path << ":" << lineNo << ": time must be finite and not negative");
         NS_ABORT_MSG_UNLESS(index < nodes.GetN(),
                             path << ":" << lineNo << ": node " << index << " not in the container");
         NS_ABORT_MSG_UNLESS(scheduled < kMaxEntries,
