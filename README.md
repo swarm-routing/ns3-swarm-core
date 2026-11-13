@@ -23,14 +23,18 @@
 The shared ns-3 contrib module `swarm-core` that every swarm-routing protocol
 links against: simulator-agnostic C++20 primitives (visited path, little-endian
 wire helpers, pheromone table, route decision, link-state and link-metric
-seams) and ns-3 cross-layer glue. **Status:** the primitives are in `core/`
+seams) and ns-3 cross-layer glue. **Status:** primitives in `core/`
 (namespace `swarm::core`, `MIT OR GPL-2.0-only`, buildable and testable without
 ns-3); the ns-3 glue is in `model/` and `helper/` (`GPL-2.0-only`):
 `SwarmRoutingBase`, the `Ipv4RoutingProtocol` a protocol's adapter derives from;
 `DeferredPacketQueue`; the link monitors `WifiLinkMonitor`, `IslLinkMonitor` and
-`EnergyMetricHook`, which implement the core's ports; and `SwarmRoutingHelper`,
-which installs a protocol and its monitors in one call. CI runs every org
-quality gate.
+`EnergyMetricHook`, which implement the core's ports; `SwarmRoutingHelper`,
+which installs a protocol and its monitors in one call and collects each
+node's counters (`CollectStats`); the router observer (`IRouterObserver`),
+through which a protocol reports its control packets, route changes, data
+decisions and state size as trace sources; and `SwarmLifecycleHelper`, which
+scripts node shutdown, crash and restart the same way for every protocol. CI
+runs every org quality gate.
 
 How to work here, for people and AI agents alike: [AGENTS.md](AGENTS.md) has
 the rules and how to build and verify; the release plan is [docs/roadmap.md](docs/roadmap.md); the org conventions are in
