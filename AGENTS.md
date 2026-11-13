@@ -22,8 +22,9 @@ CMakeLists.txt      build_lib(LIBNAME swarm-core ...); ns-3 generates ns3/swarm-
 core/               simulator-free primitives, namespace swarm::core — MIT OR GPL-2.0-only, carries core/LICENSE:
                     swarm-types.h, swarm-ports.h (IClock, IRng, INeighborProvider, ITimerScheduler,
                     ILinkState, ILinkQuality, IEnergy), swarm-wire.h (LE WireWriter/WireReader, version byte),
-                    swarm-visited-path.h, swarm-dedup-history.{h,cc} (count cap, optional entry lifetime; #33), swarm-pheromone-table.{h,cc} (flat
-                    per-destination rows: row() views, forEach, bestEntry; #45),
+                    swarm-visited-path.h, swarm-dedup-history.{h,cc} (count cap, optional entry lifetime;
+                    #33), swarm-pheromone-table.{h,cc} (flat per-destination rows: row() views, forEach,
+                    bestEntry; #45),
                     swarm-selection.{h,cc} (roulette, evaporationFactor), swarm-route-decision.h,
                     swarm-link-metric.h (ILinkMetric), swarm-observer.{h,cc} (IRouterObserver, KindName,
                     CountingObserver -> RouterStats: bounded counters); CMakeLists.txt builds it alone, no ns-3
