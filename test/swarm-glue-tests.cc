@@ -9,6 +9,9 @@
 #include "swarm-glue-tests.h"
 
 #include "ns3/basic-energy-source-helper.h"
+#include "ns3/config.h"
+#include "ns3/global-value.h"
+#include "ns3/boolean.h"
 #include "ns3/double.h"
 #include "ns3/energy-source-container.h"
 #include "ns3/inet-socket-address.h"
@@ -98,6 +101,12 @@ public:
     /// it, as an adapter overriding RouteInput would (#40).
     bool holdMarked = false;
     std::vector<bool> markedFrom;  ///< per data packet seen: did it carry the mark?
+    /// OnDataUndelivered (#40): (failed next hop, previous hop) per report; with
+    /// `backtrack`, the packet goes back to the previous hop (ARA §3.3).
+    std::vector<std::pair<Ipv4Address, Ipv4Address>> undelivered;
+    std::vector<bool> resent;
+    bool backtrack = false;
+    Ipv4Address noRouteFrom;  ///< no next hop for a packet from this neighbour
 
     void SendHelloNow() {
         BroadcastControl(Create<Packet>(4));
@@ -130,8 +139,11 @@ protected:
 
     uint16_t ControlPort() const override { return 4242; }
 
-    Ipv4Address SelectNextHop(Ipv4Address dst, Ipv4Address, Ipv4Address,
+    Ipv4Address SelectNextHop(Ipv4Address dst, Ipv4Address, Ipv4Address prev,
                               Ptr<const Packet>) override {
+        if (noRouteFrom != Ipv4Address() && prev == noRouteFrom) {
+            return Ipv4Address();
+        }
         auto it = routes.find(dst);
         return it == routes.end() ? Ipv4Address() : it->second;
     }
@@ -193,6 +205,14 @@ protected:
     void OnLinkFailure(Ipv4Address neighbor) override { failures.push_back(neighbor); }
 
     void OnLinkUp(Ipv4Address neighbor) override { ups.push_back(neighbor); }
+
+    void OnDataUndelivered(Ptr<const Packet> p, const Ipv4Header& header, Ipv4Address failedNext,
+                           Ipv4Address prev) override {
+        undelivered.emplace_back(failedNext, prev);
+        if (backtrack && prev != Ipv4Address()) {
+            resent.push_back(ResendData(p, header, prev));
+        }
+    }
 
 private:
     void ScheduleHello() {
@@ -858,6 +878,90 @@ private:
     }
 };
 
+/// The MAC gives an undeliverable data packet back to the protocol with the
+/// hop it came from, and ResendData sends it back there (ARA's backtracking,
+/// #40): n0 -> n1 -> n2 on Wi-Fi, n2 walks away, n1 backtracks to n0.
+class UndeliveredTestCase : public TestCase {
+public:
+    enum class Variant { Plain, Checksums, MacFragments };
+
+    explicit UndeliveredTestCase(Variant v)
+        : TestCase(std::string("glue: a packet the MAC gave up on comes back with its previous "
+                               "hop") +
+                   (v == Variant::Checksums      ? ", checksums on"
+                    : v == Variant::MacFragments ? "; a MAC fragment does not"
+                                                 : "")),
+          m_variant(v) {}
+
+private:
+    Variant m_variant;
+
+    void DoRun() override {
+        SwarmCoreSeed(1);
+        // A resent header must carry a valid checksum, or n0 drops it (#95).
+        GlobalValue::Bind("ChecksumEnabled", BooleanValue(m_variant == Variant::Checksums));
+        // 300 B: the 1000 B data packet leaves n1 in fragments, the warm-up does not.
+        Config::SetDefault("ns3::WifiRemoteStationManager::FragmentationThreshold",
+                           UintegerValue(m_variant == Variant::MacFragments ? 300 : 65535));
+        const uint32_t size = m_variant == Variant::MacFragments ? 1000 : 100;
+        NodeContainer nodes;
+        nodes.Create(3);
+        NetDeviceContainer devs = AdhocWifi(nodes, 50.0);
+        SwarmRoutingHelper("ns3::swarmtest::ToyProtocol").Install(nodes);
+        Ipv4AddressHelper a;
+        a.SetBase("10.1.1.0", "255.255.255.0");
+        a.Assign(devs);
+        WifiHelper::AssignStreams(devs, 10);
+        Ptr<Node> n0 = nodes.Get(0);
+        Ptr<Node> n1 = nodes.Get(1);
+        Ptr<Node> n2 = nodes.Get(2);
+        const Ipv4Address n0a = Addr(n0, 1);
+        const Ipv4Address n1a = Addr(n1, 1);
+        const Ipv4Address n2a = Addr(n2, 1);
+        Toy(n0)->routes[n2a] = n1a;
+        Toy(n1)->routes[n2a] = n2a;
+        Toy(n1)->backtrack = true;
+        Toy(n0)->noRouteFrom = n1a;  // the packet n1 sends back stops at n0
+
+        std::vector<std::string> rx;
+        Ptr<Socket> sink = Sink(n2, &rx);
+        Ptr<Socket> src = Source(n0);
+        Simulator::Schedule(Seconds(0.5), [&]() { SendUdp(src, n2a, 100); });  // ARP warm-up
+        Simulator::Schedule(Seconds(2.0), [&]() {
+            n2->GetObject<MobilityModel>()->SetPosition(Vector(5000.0, 0.0, 0.0));
+        });
+        Simulator::Schedule(Seconds(2.1), [&]() { SendUdp(src, n2a, size); });
+        Simulator::Stop(Seconds(4));
+        Simulator::Run();
+        GlobalValue::Bind("ChecksumEnabled", BooleanValue(false));
+        Config::SetDefault("ns3::WifiRemoteStationManager::FragmentationThreshold",
+                           UintegerValue(65535));
+
+        NS_TEST_EXPECT_MSG_EQ(rx.size(), 1u, "the warm-up arrived, the second packet could not");
+        if (m_variant == Variant::MacFragments) {
+            NS_TEST_EXPECT_MSG_EQ(Toy(n1)->failures.empty(), false, "the link failure is reported");
+            NS_TEST_EXPECT_MSG_EQ(Toy(n1)->undelivered.size(), 0u,
+                                  "a MAC fragment is no whole datagram: not handed back");
+            Simulator::Destroy();
+            return;
+        }
+        NS_TEST_ASSERT_MSG_EQ(Toy(n1)->undelivered.size(), 1u, "n1's MAC gave the packet back");
+        NS_TEST_EXPECT_MSG_EQ(Toy(n1)->undelivered[0].first, n2a, "toward n2");
+        NS_TEST_EXPECT_MSG_EQ(Toy(n1)->undelivered[0].second, n0a, "with n1's previous hop");
+        NS_TEST_ASSERT_MSG_EQ(Toy(n1)->resent.size(), 1u, "n1 backtracked once");
+        NS_TEST_EXPECT_MSG_EQ(Toy(n1)->resent[0], true, "ResendData sent it");
+        NS_TEST_EXPECT_MSG_EQ(Toy(n0)->undelivered.size(), 0u, "n0's frames all arrived");
+        bool backFromN1 = false;  // n0 originated both packets: only a returned one is listed
+        for (const Ipv4Address& from : Toy(n0)->dataFrom) {
+            backFromN1 |= from == n1a;
+        }
+        NS_TEST_EXPECT_MSG_EQ(backFromN1, true, "the data packet came back to n0 from n1");
+        NS_TEST_EXPECT_MSG_EQ(Toy(n0)->GetDeferredQueue()->Stats().enqueued, 1u,
+                              "n0 had no other route for it and held it");
+        Simulator::Destroy();
+    }
+};
+
 // --- EnergyMetricHook
 // ----------------------------------------------------------------
 
@@ -1037,10 +1141,17 @@ private:
 }  // namespace
 
 std::vector<TestCase*> MakeGlueTestCases() {
-    return {new PortsTestCase,       new DeferredQueueTestCase,
-            new RoutingBaseTestCase, new DeferFromAdapterTestCase,
-            new IslMonitorTestCase,  new WifiMonitorTestCase,
-            new EnergyHookTestCase,  new ObserverTestCase,
+    return {new PortsTestCase,
+            new DeferredQueueTestCase,
+            new RoutingBaseTestCase,
+            new DeferFromAdapterTestCase,
+            new IslMonitorTestCase,
+            new WifiMonitorTestCase,
+            new UndeliveredTestCase(UndeliveredTestCase::Variant::Plain),
+            new UndeliveredTestCase(UndeliveredTestCase::Variant::Checksums),
+            new UndeliveredTestCase(UndeliveredTestCase::Variant::MacFragments),
+            new EnergyHookTestCase,
+            new ObserverTestCase,
             new DeterminismTestCase};
 }
 

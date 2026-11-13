@@ -60,19 +60,21 @@ TypeId SwarmPrevHopTag::GetInstanceTypeId() const {
 }
 
 uint32_t SwarmPrevHopTag::GetSerializedSize() const {
-    return 4;
+    return 8;
 }
 
 void SwarmPrevHopTag::Serialize(TagBuffer i) const {
     i.WriteU32(m_sender.Get());
+    i.WriteU32(m_from.Get());
 }
 
 void SwarmPrevHopTag::Deserialize(TagBuffer i) {
     m_sender = Ipv4Address(i.ReadU32());
+    m_from = Ipv4Address(i.ReadU32());
 }
 
 void SwarmPrevHopTag::Print(std::ostream& os) const {
-    os << "prevHop=" << m_sender;
+    os << "prevHop=" << m_sender << " from=" << m_from;
 }
 
 // --- SwarmRoutingBase ------------------------------------------------------------
@@ -138,6 +140,8 @@ void SwarmRoutingBase::DoInitialize() {
         if (Ptr<WifiLinkMonitor> wifi = node->GetObject<WifiLinkMonitor>()) {
             wifi->TraceConnectWithoutContext("LinkFailure",
                                              MakeCallback(&SwarmRoutingBase::WifiLinkFailed, this));
+            wifi->TraceConnectWithoutContext(
+                "Undelivered", MakeCallback(&SwarmRoutingBase::WifiUndelivered, this));
         }
         if (Ptr<IslLinkMonitor> isl = node->GetObject<IslLinkMonitor>()) {
             isl->TraceConnectWithoutContext("LinkChange",
@@ -393,6 +397,9 @@ bool SwarmRoutingBase::RouteInput(Ptr<const Packet> p, const Ipv4Header& header,
     if (m_sockets.empty()) {
         return false;
     }
+    if (m_ucb.IsNull() && !ucb.IsNull()) {
+        m_ucb = ucb;
+    }
     const Ipv4Address dst = header.GetDestination();
     const int32_t iif = m_ipv4->GetInterfaceForDevice(idev);
     bool control = false;
@@ -450,10 +457,24 @@ void SwarmRoutingBase::ForwardData(Ptr<const Packet> p, const Ipv4Header& header
         return;
     }
     Ptr<Packet> q = p->Copy();
+    // `from`: where this node had the packet from. A packet the MAC gave back
+    // (ResendData) still carries this node's own tag: keep its `from`.
     SwarmPrevHopTag old;
-    q->RemovePacketTag(old);
-    q->AddPacketTag(SwarmPrevHopTag(m_ipv4->GetAddress(InterfaceTowards(next), 0).GetLocal()));
+    Ipv4Address from;
+    if (q->RemovePacketTag(old)) {
+        from = IsMyAddress(old.Get()) ? old.GetFrom() : old.Get();
+    }
+    q->AddPacketTag(
+        SwarmPrevHopTag(m_ipv4->GetAddress(InterfaceTowards(next), 0).GetLocal(), from));
     ucb(route, q, header);
+}
+
+bool SwarmRoutingBase::ResendData(Ptr<const Packet> p, const Ipv4Header& header, Ipv4Address next) {
+    if (m_ucb.IsNull() || InterfaceTowards(next) < 0) {
+        return false;
+    }
+    ForwardData(p, header, next, m_ucb);
+    return true;
 }
 
 // --- the deferred queue ------------------------------------------------------------
@@ -587,6 +608,30 @@ void SwarmRoutingBase::WifiLinkFailed(Ipv4Address neighbor, Mac48Address) {
     if (neighbor != Ipv4Address()) {
         OnLinkFailure(neighbor);
     }
+}
+
+void SwarmRoutingBase::WifiUndelivered(Ptr<const Packet> datagram, Ipv4Address neighbor) {
+    Ptr<Packet> p = datagram->Copy();
+    Ipv4Header header;
+    p->RemoveHeader(header);
+    if (Node::ChecksumEnabled()) {
+        header.EnableChecksum();  // Deserialize does not restore it: a resend needs it
+    }
+    if (header.GetDestination().IsBroadcast() || header.GetDestination().IsMulticast()) {
+        return;
+    }
+    // Only a first fragment starts with the UDP header.
+    if (header.GetProtocol() == kUdpProtocol && header.GetFragmentOffset() == 0 &&
+        p->GetSize() >= UdpHeader().GetSerializedSize()) {
+        UdpHeader udp;
+        if (p->PeekHeader(udp) && udp.GetDestinationPort() == ControlPort()) {
+            return;  // control is one hop; its loss is the protocol's own business
+        }
+    }
+    SwarmPrevHopTag tag;
+    const Ipv4Address prev =
+        p->PeekPacketTag(tag) && IsMyAddress(tag.Get()) ? tag.GetFrom() : Ipv4Address();
+    OnDataUndelivered(p, header, neighbor, prev);
 }
 
 void SwarmRoutingBase::IslLinkChanged(Ipv4Address peer, bool up) {
