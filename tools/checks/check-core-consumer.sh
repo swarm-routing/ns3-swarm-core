@@ -34,7 +34,9 @@ grep -q 'swarm_core_tests' <<<"$targets" && fail "the consumer's build has the t
 grep -Eq '(^|[ /])swarm_core( |$)' <<<"$targets" || fail "the consumer's build has no swarm_core target"
 
 listed=$(ctest --test-dir "$build" -N)
-grep -q 'swarm-core' <<<"$listed" && fail "the consumer's ctest lists swarm-core's suite"
+# A test entry named swarm-core, not the name anywhere (the first line of the
+# listing is the build directory, which in CI is under .../ns3-swarm-core/).
+grep -Eq '^ *Test +#[0-9]+: swarm-core$' <<<"$listed" && fail "the consumer's ctest lists swarm-core's suite"
 grep -q 'Total Tests: 1$' <<<"$listed" || fail "the consumer's ctest should list its one test: $listed"
 
 python3 -I - "$build/compile_commands.json" <<'PY' || fail "a compile command carries -Werror"
