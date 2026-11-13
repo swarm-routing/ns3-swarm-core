@@ -1,0 +1,47 @@
+# Copyright (c) 2026 Daniel Joppi (https://github.com/swarm-routing)
+# SPDX-License-Identifier: GPL-2.0-only
+name: Core
+
+# core/ on its own (plain CMake + ctest, no ns-3 tree, C++20): the build every
+# protocol repository pins (#99). ci.yml compiles the same sources inside
+# ns-3, at the standard ns-3 builds at (C++23 on ns-3.49), so only this check
+# sees what a consumer's C++20 build sees: the strict warnings as errors (in
+# core/CMakeLists.txt), the tests, the same under ASan + UBSan, and core/ used
+# as a library by another CMake project (#100). Formatting and licence headers
+# are ci.yml's (`ci / format`, `ci / headers / licence`). The check name is
+# `core`; no `paths:` filter, as a required check runs on every PR.
+on:
+  push:
+    branches: [main]
+  pull_request:
+  merge_group:  # the merge queue runs the required checks on each group (swarm-routing/.github#130)
+
+permissions:
+  contents: read
+
+jobs:
+  core:
+    name: core
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    steps:
+      - name: Harden the runner (audit egress)
+        uses: step-security/harden-runner@1d88384fd173af6ecb012dfd0264a306b711241a # v2.22.4
+        timeout-minutes: 2  # its download and start take seconds (swarm-routing/.github#164)
+        with:
+          egress-policy: audit
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: Build and test (debug, strict warnings)
+        run: |
+          cmake -S core -B build/debug -DCMAKE_BUILD_TYPE=Debug
+          cmake --build build/debug -j "$(nproc)"
+          ctest --test-dir build/debug --output-on-failure
+      - name: Build and test (ASan + UBSan)
+        run: |
+          cmake -S core -B build/sanitized -DCMAKE_BUILD_TYPE=Debug -DSWARM_CORE_SANITIZE=ON
+          cmake --build build/sanitized -j "$(nproc)"
+          ctest --test-dir build/sanitized --output-on-failure
+      - name: core/ as a library in another CMake project
+        run: tools/checks/check-core-consumer.sh build/consumer

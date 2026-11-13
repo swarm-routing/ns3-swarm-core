@@ -64,7 +64,7 @@ description = "swarm-core, the shared ns-3 contrib module every swarm-routing pr
 homepage = "https://swarm-routing.github.io/arena/ns3-swarm-core/"
 topics = ["ns-3", "swarm-intelligence", "routing-protocol", "manet", "cpp20", "pheromone", "network-simulation", "library"]
 ruleset = "protocol"
-required_checks = ["ci / ns-latest debug", "ci / ns-latest sanitized", "ci / format", "ci / headers / licence", "check / org-sync", "title / title", "review / coderabbit"]
+required_checks = ["ci / ns-latest debug", "ci / ns-latest sanitized", "ci / format", "ci / headers / licence", "core", "check / org-sync", "title / title", "review / coderabbit"]
 # Merge through a merge queue (swarm-routing/.github#130); every workflow behind a required
 # check also runs on merge_group.
 merge_queue = true
