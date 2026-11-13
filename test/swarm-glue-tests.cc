@@ -9,6 +9,10 @@
 #include "swarm-glue-tests.h"
 
 #include "ns3/basic-energy-source-helper.h"
+#include "ns3/config.h"
+#include "ns3/global-value.h"
+#include "ns3/boolean.h"
+#include "ns3/buffer.h"
 #include "ns3/double.h"
 #include "ns3/energy-source-container.h"
 #include "ns3/inet-socket-address.h"
@@ -25,6 +29,7 @@
 #include "ns3/socket.h"
 #include "ns3/string.h"
 #include "ns3/swarm-core-module.h"
+#include "ns3/tag.h"
 #include "ns3/udp-socket-factory.h"
 #include "ns3/uinteger.h"
 #include "ns3/wifi-helper.h"
@@ -32,6 +37,7 @@
 
 #include <array>
 #include <cmath>
+#include <fstream>
 #include <map>
 #include <sstream>
 #include <string>
@@ -48,7 +54,31 @@ constexpr uint8_t kHello = 1;
 constexpr uint8_t kMessage = 2;
 constexpr std::array<swarm::core::KindName, 2> kToyKinds{{{kHello, "HELLO"}, {kMessage, "MSG"}}};
 
-// --- a toy protocol: static next hops, learned after a "discovery" delay ------
+/// A mark an adapter puts on a packet (a test stand-in for a protocol header
+/// that rides on data packets). ns-3's IP layer leaves an unknown tag alone.
+class MarkTag : public Tag {
+public:
+    static TypeId GetTypeId() {
+        static TypeId tid = TypeId("ns3::swarmtest::MarkTag")
+                                .SetParent<Tag>()
+                                .SetGroupName("SwarmCore")
+                                .AddConstructor<MarkTag>();
+        return tid;
+    }
+
+    TypeId GetInstanceTypeId() const override { return GetTypeId(); }
+
+    uint32_t GetSerializedSize() const override { return 0; }
+
+    void Serialize(TagBuffer) const override {}
+
+    void Deserialize(TagBuffer) override {}
+
+    void Print(std::ostream& os) const override { os << "mark"; }
+};
+
+// --- a toy protocol: static next hops, learned after a "discovery" delay
+// ------
 
 /// A SwarmRoutingBase with no routing logic: next hops come from a table the
 /// test fills; a route in `pending` is learned `discoveryDelay` (plus a jitter
@@ -69,6 +99,27 @@ public:
     std::vector<Ipv4Address> failures;
     std::vector<Ipv4Address> ups;
     uint32_t discoveries = 0;
+    /// A relay that holds every transit packet through Defer with a mark on
+    /// it, as an adapter overriding RouteInput would (#40).
+    bool holdMarked = false;
+    std::vector<bool> markedFrom;  ///< per data packet seen: did it carry the mark?
+    /// OnDataUndelivered (#40): (failed next hop, previous hop) per report; with
+    /// `backtrack`, the packet goes back to the previous hop (ARA §3.3).
+    std::vector<std::pair<Ipv4Address, Ipv4Address>> undelivered;
+    std::vector<bool> resent;
+    bool backtrack = false;
+    Ipv4Address noRouteFrom;  ///< no next hop for a packet from this neighbour
+
+    /// Lifecycle (#43): what each hook saw, the routes DoNodeStart restores,
+    /// and a core timer that a shutdown or crash must cancel.
+    std::vector<std::string> lifecycleLog;
+    std::map<Ipv4Address, Ipv4Address> staticRoutes;
+    bool probeRan = false;
+    static constexpr uint32_t kLeavingSize = 5;
+
+    void ArmProbe(double delay) {
+        Timers().schedule(delay, [this]() { probeRan = true; });
+    }
 
     void SendHelloNow() {
         BroadcastControl(Create<Packet>(4));
@@ -101,8 +152,11 @@ protected:
 
     uint16_t ControlPort() const override { return 4242; }
 
-    Ipv4Address SelectNextHop(Ipv4Address dst, Ipv4Address, Ipv4Address,
+    Ipv4Address SelectNextHop(Ipv4Address dst, Ipv4Address, Ipv4Address prev,
                               Ptr<const Packet>) override {
+        if (noRouteFrom != Ipv4Address() && prev == noRouteFrom) {
+            return Ipv4Address();
+        }
         auto it = routes.find(dst);
         return it == routes.end() ? Ipv4Address() : it->second;
     }
@@ -132,8 +186,10 @@ protected:
         Observer().onControlReceived(p->GetSize() == 4 ? kHello : kMessage, p->GetSize());
     }
 
-    bool OnDataReceived(Ptr<const Packet>, const Ipv4Header& header, Ipv4Address prev) override {
+    bool OnDataReceived(Ptr<const Packet> p, const Ipv4Header& header, Ipv4Address prev) override {
         dataFrom.push_back(prev);
+        MarkTag mark;
+        markedFrom.push_back(p->PeekPacketTag(mark));
         if (IsMyAddress(header.GetDestination())) {
             Observer().onDataDecision(ToNodeAddress(header.GetDestination()),
                                       swarm::core::RouteAction::Deliver);
@@ -146,9 +202,50 @@ protected:
                                   swarm::core::RouteAction::Unicast);
     }
 
+    bool RouteInput(Ptr<const Packet> p, const Ipv4Header& header, Ptr<const NetDevice> idev,
+                    const UnicastForwardCallback& ucb, const MulticastForwardCallback& mcb,
+                    const LocalDeliverCallback& lcb, const ErrorCallback& ecb) override {
+        const Ipv4Address dst = header.GetDestination();
+        if (holdMarked && !IsMyAddress(dst) && !dst.IsBroadcast() && !dst.IsMulticast()) {
+            Ptr<Packet> q = p->Copy();
+            q->AddPacketTag(MarkTag());
+            Defer(q, header, ucb, ecb);
+            return true;
+        }
+        return SwarmRoutingBase::RouteInput(p, header, idev, ucb, mcb, lcb, ecb);
+    }
+
     void OnLinkFailure(Ipv4Address neighbor) override { failures.push_back(neighbor); }
 
+    // A graceful shutdown announces it is leaving; a crash tries to as well,
+    // and the base must let nothing out. Both forget the routes; a restart
+    // brings back the static ones.
+    void DoNodeShutdown() override {
+        lifecycleLog.emplace_back("shutdown");
+        BroadcastControl(Create<Packet>(kLeavingSize));
+        routes.clear();
+    }
+
+    void DoNodeCrash() override {
+        lifecycleLog.emplace_back("crash");
+        BroadcastControl(Create<Packet>(kLeavingSize));
+        routes.clear();
+    }
+
+    void DoNodeStart() override {
+        lifecycleLog.emplace_back("start");
+        routes = staticRoutes;
+    }
+
     void OnLinkUp(Ipv4Address neighbor) override { ups.push_back(neighbor); }
+
+    void OnDataUndelivered(Ptr<const Packet> p, const Ipv4Header& header, Ipv4Address failedNext,
+                           Ipv4Address prev) override {
+        undelivered.emplace_back(failedNext, prev);
+        if (backtrack && prev != Ipv4Address()) {
+            resent.push_back(ResendData(p, header, prev));
+        }
+    }
 
 private:
     void ScheduleHello() {
@@ -233,7 +330,8 @@ struct Line {
     }
 };
 
-// --- the ports ------------------------------------------------------------------
+// --- the ports
+// ------------------------------------------------------------------
 
 class PortsTestCase : public TestCase {
 public:
@@ -286,12 +384,14 @@ private:
     }
 };
 
-// --- DeferredPacketQueue -----------------------------------------------------------
+// --- DeferredPacketQueue
+// -----------------------------------------------------------
 
 class DeferredQueueTestCase : public TestCase {
 public:
     DeferredQueueTestCase()
-        : TestCase("glue: DeferredPacketQueue bounded by size and age, drops accounted") {}
+        : TestCase("glue: DeferredPacketQueue bounded by size and age, drops "
+                   "accounted") {}
 
 private:
     static DeferredPacket Entry(Ipv4Address dst) {
@@ -360,12 +460,404 @@ private:
     }
 };
 
-// --- SwarmRoutingBase -------------------------------------------------------------
+/// The queue's order, expiry and batched re-queue (#46).
+class DeferredQueueOrderTestCase : public TestCase {
+public:
+    DeferredQueueOrderTestCase()
+        : TestCase("glue: DeferredPacketQueue keeps order; Requeue is one batch") {}
+
+private:
+    static DeferredPacket Entry(Ipv4Address dst, uint32_t size) {
+        DeferredPacket e;
+        e.packet = Create<Packet>(size);
+        e.header.SetDestination(dst);
+        e.ecb = MakeCallback(&CountError);
+        return e;
+    }
+
+    static std::vector<uint32_t> Sizes(const std::vector<DeferredPacket>& v) {
+        std::vector<uint32_t> out;
+        for (const auto& e : v) {
+            out.push_back(e.packet->GetSize());
+        }
+        return out;
+    }
+
+    void DoRun() override {
+        Ptr<DeferredPacketQueue> q = CreateObject<DeferredPacketQueue>();
+        q->SetAttribute("MaxPackets", UintegerValue(6));
+        q->SetAttribute("MaxAge", TimeValue(Seconds(1)));
+        g_errors = 0;
+        const Ipv4Address a("10.0.0.1");
+        const Ipv4Address b("10.0.0.2");
+        const Ipv4Address c("10.0.0.3");
+        std::vector<uint32_t> firstA;
+        std::vector<uint32_t> secondA;
+        std::vector<uint32_t> restB;
+        std::vector<Ipv4Address> dests;
+        uint64_t enqueuedAfterRequeue = 0;
+        uint32_t sizeAfterOverflow = 0;
+
+        // t = 0.1 (not 0: an enqueue time of zero reads as "not yet queued"):
+        // a1 b2 a3 c4 a5 b6, interleaved.
+        const std::array<std::pair<Ipv4Address, uint32_t>, 6> fill{
+            {{a, 1}, {b, 2}, {a, 3}, {c, 4}, {a, 5}, {b, 6}}};
+        Simulator::Schedule(Seconds(0.1), [&]() {
+            for (const auto& [d, n] : fill) {
+                q->Enqueue(Entry(d, n));
+            }
+        });
+        Simulator::Schedule(Seconds(0.5), [&]() {
+            // Release a: oldest first; the others keep their order.
+            std::vector<DeferredPacket> released = q->Release(a);
+            firstA = Sizes(released);
+            dests = q->Destinations();
+            // No route yet: back as one batch, after b and c, in order, with
+            // their first enqueue time (t = 0.1).
+            q->Requeue(std::move(released));
+            enqueuedAfterRequeue = q->Stats().enqueued;
+            // A new one at t = 0.5: the queue is full, so b2 goes for room.
+            q->Requeue(std::vector<DeferredPacket>{Entry(a, 7)});
+        });
+        Simulator::Schedule(Seconds(1.2), [&]() {
+            // Everything enqueued at t = 0.1 has expired, the re-queued a1 a3 a5
+            // too (their first enqueue time was kept); a7 (t = 0.5) has not.
+            restB = Sizes(q->Release(b));
+            secondA = Sizes(q->Release(a));
+            // Overflow through Requeue drops the oldest, as Enqueue does.
+            std::vector<DeferredPacket> many;
+            for (uint32_t i = 10; i < 18; ++i) {
+                many.push_back(Entry(c, i));
+            }
+            q->Requeue(std::move(many));
+            sizeAfterOverflow = q->Size();
+        });
+        Simulator::Run();
+        Simulator::Destroy();
+
+        NS_TEST_EXPECT_MSG_EQ((firstA == std::vector<uint32_t>{1, 3, 5}), true,
+                              "released oldest first");
+        NS_TEST_EXPECT_MSG_EQ((dests == std::vector<Ipv4Address>{b, c}), true,
+                              "the rest keep their order");
+        NS_TEST_EXPECT_MSG_EQ(enqueuedAfterRequeue, 9u, "a requeued packet counts as enqueued");
+        NS_TEST_EXPECT_MSG_EQ((secondA == std::vector<uint32_t>{7}), true,
+                              "re-queued packets kept their first enqueue time");
+        NS_TEST_EXPECT_MSG_EQ(restB.empty(), true, "expired packets are not released");
+        NS_TEST_EXPECT_MSG_EQ(sizeAfterOverflow, 6u, "Requeue respects MaxPackets");
+        const DeferredQueueStats& s = q->Stats();
+        NS_TEST_EXPECT_MSG_EQ(s.expired, 5u, "c4 b6 and the re-queued a1 a3 a5 expired");
+        NS_TEST_EXPECT_MSG_EQ(s.overflow, 3u, "b2, then two c packets, dropped for room");
+        NS_TEST_EXPECT_MSG_EQ(s.enqueued,
+                              s.released + s.overflow + s.expired + s.discarded + q->Size(),
+                              "the counts add up");
+        NS_TEST_EXPECT_MSG_EQ(g_errors, 8u, "every drop through the error callback");
+        q->Dispose();
+    }
+};
+
+/// The cached ports see a monitor aggregated after the first read (#46).
+class PortCacheTestCase : public TestCase {
+public:
+    PortCacheTestCase() : TestCase("glue: cached ports follow a monitor added later") {}
+
+private:
+    void DoRun() override {
+        NodeContainer nodes;
+        nodes.Create(2);
+        PointToPointHelper p2p;
+        p2p.Install(nodes.Get(0), nodes.Get(1));
+        InternetStackHelper stack;
+        stack.SetRoutingHelper(SwarmRoutingHelper("ns3::swarmtest::ToyProtocol"));
+        stack.Install(nodes);  // no monitors
+        Ptr<ToyProtocol> toy = Toy(nodes.Get(0));
+        const swarm::core::INeighborProvider* before = &toy->Neighbors();
+        NS_TEST_EXPECT_MSG_EQ((dynamic_cast<const IslLinkMonitor*>(before) == nullptr), true,
+                              "no monitor: the null port");
+        NS_TEST_EXPECT_MSG_EQ((&toy->Neighbors() == before), true, "the port is cached");
+        Ptr<IslLinkMonitor> isl = CreateObject<IslLinkMonitor>();
+        isl->Install(nodes.Get(0));
+        NS_TEST_EXPECT_MSG_EQ((&toy->Neighbors() == PeekPointer(isl)), true,
+                              "a monitor aggregated later is seen");
+        NS_TEST_EXPECT_MSG_EQ((&toy->LinkState() == PeekPointer(isl)), true,
+                              "and is the link-state port");
+        NS_TEST_EXPECT_MSG_EQ(std::isnan(toy->LinkQuality().sinrDbFrom(1)), true,
+                              "no wifi monitor: null link quality");
+        Simulator::Destroy();
+    }
+};
+
+/// A cancelled timer never runs, in the simulator (#46).
+class CancellableTimerTestCase : public TestCase {
+public:
+    CancellableTimerTestCase() : TestCase("glue: SwarmTimerScheduler cancels a timer") {}
+
+private:
+    void DoRun() override {
+        SwarmTimerScheduler timers;
+        std::vector<std::string> ran;
+        const swarm::core::TimerHandle stale =
+            timers.scheduleCancellable(0.5, [&]() { ran.emplace_back("stale"); });
+        const swarm::core::TimerHandle kept =
+            timers.scheduleCancellable(0.6, [&]() { ran.emplace_back("kept"); });
+        timers.scheduleCancellable(0.8, [&]() { ran.emplace_back("late"); });
+        NS_TEST_EXPECT_MSG_NE(stale, swarm::core::kNoTimer, "a real handle");
+        NS_TEST_EXPECT_MSG_NE(stale, kept, "distinct handles");
+        NS_TEST_EXPECT_MSG_EQ(timers.Pending(), 3u, "three pending");
+        std::size_t pendingAfterFire = 99;
+        Simulator::Schedule(Seconds(0.1), [&]() { timers.cancel(stale); });
+        Simulator::Schedule(Seconds(0.7), [&]() {
+            pendingAfterFire = timers.Pending();
+            timers.cancel(kept);  // already ran: a no-op
+            timers.CancelAll();   // drops "late"
+        });
+        Simulator::Run();
+        Simulator::Destroy();
+        NS_TEST_EXPECT_MSG_EQ((ran == std::vector<std::string>{"kept"}), true,
+                              "the cancelled timer never ran");
+        NS_TEST_EXPECT_MSG_EQ(pendingAfterFire, 1u, "a timer that ran is forgotten");
+        NS_TEST_EXPECT_MSG_EQ(timers.Pending(), 0u, "CancelAll forgets the rest");
+    }
+};
+
+/// The Buffer::Iterator wire helpers write the core writer's bytes (#46).
+class WireBufferTestCase : public TestCase {
+public:
+    WireBufferTestCase() : TestCase("glue: wire fields straight into an ns-3 Buffer") {}
+
+private:
+    template <typename W> static void Fields(W& w) {
+        w.version(3);
+        w.u16(0xBEEF);
+        w.i32(-5);
+        w.f64(1.25);
+        w.boolean(true);
+    }
+
+    void DoRun() override {
+        std::vector<uint8_t> ref;
+        swarm::core::WireWriter rw(ref);
+        Fields(rw);
+        Buffer buf;
+        buf.AddAtStart(static_cast<uint32_t>(ref.size()));
+        Buffer::Iterator it = buf.Begin();
+        BufferWireWriter bw(it);
+        Fields(bw);
+        NS_TEST_EXPECT_MSG_EQ(bw.size(), ref.size(), "every byte written");
+        std::vector<uint8_t> got(buf.GetSize());
+        buf.CopyData(got.data(), buf.GetSize());
+        NS_TEST_EXPECT_MSG_EQ((got == ref), true, "same bytes as the vector writer");
+
+        std::array<uint8_t, 32> scratch{};
+        Buffer::Iterator rd = buf.Begin();
+        swarm::core::WireReader r(ReadWireBytes(rd, scratch, static_cast<uint32_t>(ref.size())));
+        NS_TEST_EXPECT_MSG_EQ(r.expectVersion(3), true, "version");
+        NS_TEST_EXPECT_MSG_EQ(r.u16(), 0xBEEF, "u16");
+        NS_TEST_EXPECT_MSG_EQ(r.i32(), -5, "i32");
+        NS_TEST_EXPECT_MSG_EQ(r.f64(), 1.25, "f64");
+        NS_TEST_EXPECT_MSG_EQ(r.boolean(), true, "bool");
+        NS_TEST_EXPECT_MSG_EQ(r.atEnd(), true, "nothing left");
+
+        Buffer::Iterator shortRd = buf.Begin();
+        std::array<uint8_t, 4> tiny{};
+        swarm::core::WireReader cut(
+            ReadWireBytes(shortRd, tiny, static_cast<uint32_t>(ref.size())));
+        cut.u8();
+        cut.u16();
+        cut.i32();
+        NS_TEST_EXPECT_MSG_EQ(cut.ok(), false, "a short scratch fails the reader closed");
+    }
+};
+
+// --- node lifecycle (#43)
+// ----------------------------------------------------------
+
+uint32_t LeavingFrom(Ptr<ToyProtocol> toy) {
+    uint32_t n = 0;
+    for (const auto& l : toy->controlLog) {
+        n += l.size() > 2 && l.compare(l.size() - 2, 2, " 5") == 0 ? 1 : 0;
+    }
+    return n;
+}
+
+class LifecycleTestCase : public TestCase {
+public:
+    LifecycleTestCase()
+        : TestCase("glue: shutdown and crash cancel timers, flush the queue, refuse "
+                   "routing; only shutdown announces") {}
+
+private:
+    void DoRun() override {
+        SwarmCoreSeed(1);
+        Line line("10Mbps");
+        Ptr<Node> n0 = line.nodes.Get(0);
+        Ptr<Node> n1 = line.nodes.Get(1);
+        Ptr<Node> n2 = line.nodes.Get(2);
+        const Ipv4Address n0a = Addr(n0, 1);
+        const Ipv4Address n2a = Addr(n2, 1);
+        Toy(n1)->routes[n0a] = n0a;
+
+        std::vector<std::string> lifecycle;
+        Toy(n0)->TraceConnectWithoutContext(
+            "Lifecycle",
+            MakeBoundCallback(
+                +[](std::vector<std::string>* out, SwarmNodeState st, SwarmLifecycleOp op) {
+                    out->push_back(std::to_string(static_cast<int>(st)) + ":" +
+                                   std::to_string(static_cast<int>(op)));
+                },
+                &lifecycle));
+        std::map<DeferredDropReason, int> drops;
+        Toy(n0)->GetDeferredQueue()->TraceConnectWithoutContext(
+            "Drop", MakeBoundCallback(
+                        +[](std::map<DeferredDropReason, int>* m, Ptr<const Packet>,
+                            const Ipv4Header&, DeferredDropReason r) { ++(*m)[r]; },
+                        &drops));
+
+        std::vector<std::string> rx0;
+        Ptr<Socket> sink0 = Sink(n0, &rx0);
+        Ptr<Socket> src0 = Source(n0);
+        Ptr<Socket> src1 = Source(n1);
+        bool downDuring = false;
+        int sendWhileDown = 0;
+        Simulator::Schedule(Seconds(0.5), [&]() {
+            SendUdp(src0, n2a, 100);  // no route at n0: deferred
+            Toy(n0)->ArmProbe(2.5);   // would run at 3.0
+        });
+        Simulator::Schedule(Seconds(1.0), [&]() { Toy(n0)->Shutdown(); });
+        Simulator::Schedule(Seconds(1.5), [&]() {
+            downDuring = Toy(n0)->IsDown();
+            sendWhileDown = src0->SendTo(Create<Packet>(100), 0, InetSocketAddress(n2a, kDataPort));
+            SendUdp(src1, n0a, 100);  // reaches n0, which routes nothing while down
+            Toy(n0)->Shutdown();      // already down: a no-op
+        });
+        Simulator::Schedule(Seconds(2.0), [&]() { Toy(n2)->Crash(); });
+        Simulator::Schedule(Seconds(4.0), [&]() { Toy(n0)->Start(); });
+        Simulator::Schedule(Seconds(4.5), [&]() { SendUdp(src1, n0a, 100); });
+        Simulator::Stop(Seconds(5));
+        Simulator::Run();
+
+        const DeferredQueueStats& s = Toy(n0)->GetDeferredQueue()->Stats();
+        NS_TEST_EXPECT_MSG_EQ(s.nodeDown, 1u, "the held packet is dropped as NodeDown");
+        NS_TEST_EXPECT_MSG_EQ(drops[DeferredDropReason::NodeDown], 1, "through the Drop trace");
+        NS_TEST_EXPECT_MSG_EQ(s.enqueued, 1u, "nothing is deferred while down");
+        NS_TEST_EXPECT_MSG_EQ(s.enqueued,
+                              s.released + s.overflow + s.expired + s.discarded + s.nodeDown +
+                                  Toy(n0)->GetDeferredQueue()->Size(),
+                              "the counts add up");
+        NS_TEST_EXPECT_MSG_EQ(Toy(n0)->probeRan, false, "the core's timer was cancelled");
+        NS_TEST_EXPECT_MSG_EQ(downDuring, true, "down between Shutdown and Start");
+        NS_TEST_EXPECT_MSG_EQ(sendWhileDown, -1, "RouteOutput refuses while down");
+        NS_TEST_EXPECT_MSG_EQ(rx0.size(), 1u, "RouteInput refuses while down, delivers after");
+        NS_TEST_EXPECT_MSG_EQ(Toy(n0)->IsDown(), false, "up after Start");
+        NS_TEST_EXPECT_MSG_EQ(
+            (lifecycle == std::vector<std::string>{"1:1", "0:0"}), true,
+            "Lifecycle trace: (Down, Shutdown), (Up, Start); the repeat is silent");
+        NS_TEST_EXPECT_MSG_EQ(
+            (Toy(n0)->lifecycleLog == std::vector<std::string>{"shutdown", "start"}), true,
+            "n0's hooks");
+        NS_TEST_EXPECT_MSG_EQ((Toy(n2)->lifecycleLog == std::vector<std::string>{"crash"}), true,
+                              "n2's hook");
+        // Shutdown and crash differ observably: n1 heard n0 leave, not n2.
+        NS_TEST_EXPECT_MSG_EQ(LeavingFrom(Toy(n1)), 1u, "one leaving control, from n0");
+        bool fromN0 = false;
+        for (const auto& l : Toy(n1)->controlLog) {
+            std::ostringstream want;
+            want << n0a << "->";
+            fromN0 |= l.find(want.str()) != std::string::npos;
+        }
+        NS_TEST_EXPECT_MSG_EQ(fromN0, true, "the leaving control came from n0");
+        Simulator::Destroy();
+    }
+};
+
+/// n0 - n1 - n2 - n3 - n4 over point-to-point links, n0 sending to n4 every
+/// 250 ms; the helper crashes n2 at 2 s and restarts it at 4 s from a
+/// schedule file. Returns the deliveries at n4 (time in ns, source).
+std::vector<std::string> RunChainWithFailures(const std::string& schedule, uint32_t seed) {
+    SwarmCoreSeed(seed);
+    NodeContainer nodes;
+    nodes.Create(5);
+    PointToPointHelper p2p;
+    p2p.SetChannelAttribute("Delay", StringValue("2ms"));
+    p2p.SetDeviceAttribute("DataRate", StringValue("10Mbps"));
+    std::vector<NetDeviceContainer> links;
+    for (uint32_t i = 0; i + 1 < 5; ++i) {
+        links.push_back(p2p.Install(nodes.Get(i), nodes.Get(i + 1)));
+    }
+    SwarmRoutingHelper toy("ns3::swarmtest::ToyProtocol");
+    toy.Install(nodes);
+    toy.AssignStreams(nodes, 0);
+    Ipv4AddressHelper a;
+    for (uint32_t i = 0; i < links.size(); ++i) {
+        std::ostringstream base;
+        base << "10.2." << i << ".0";
+        a.SetBase(base.str().c_str(), "255.255.255.0");
+        a.Assign(links[i]);
+    }
+    const Ipv4Address dst("10.2.3.2");  // n4 on its only link
+    for (uint32_t i = 0; i < 4; ++i) {
+        std::ostringstream next;
+        next << "10.2." << i << ".2";
+        Toy(nodes.Get(i))->staticRoutes[dst] = Ipv4Address(next.str().c_str());
+        Toy(nodes.Get(i))->routes = Toy(nodes.Get(i))->staticRoutes;
+    }
+    std::ofstream(schedule) << "# time node op\n2.0 2 crash\n\n4.0 2 start  # back\n";
+    SwarmLifecycleHelper().ScheduleFile(schedule, nodes);
+
+    auto* rx = new std::vector<std::string>();
+    Ptr<Socket> sink = Sink(nodes.Get(4), rx);
+    Ptr<Socket> src = Source(nodes.Get(0));
+    for (int k = 2; k < 24; ++k) {
+        Simulator::Schedule(MilliSeconds(250 * k), [src, dst]() { SendUdp(src, dst, 100); });
+    }
+    Simulator::Stop(Seconds(6.5));
+    Simulator::Run();
+    Simulator::Destroy();
+    std::vector<std::string> out = *rx;
+    delete rx;
+    return out;
+}
+
+class LifecycleHelperTestCase : public TestCase {
+public:
+    LifecycleHelperTestCase()
+        : TestCase("glue: SwarmLifecycleHelper crashes and restarts a chain node; delivery "
+                   "recovers; same seed, same bytes") {}
+
+private:
+    void DoRun() override {
+        const std::string schedule = CreateTempDirFilename("failures.txt");
+        const std::vector<std::string> first = RunChainWithFailures(schedule, 3);
+        uint32_t before = 0;
+        uint32_t during = 0;
+        uint32_t after = 0;
+        for (const auto& l : first) {
+            const double t = std::stod(l.substr(0, l.find(' '))) * 1e-9;
+            (t < 2.0 ? before : t < 4.0 ? during : after) += 1;
+        }
+        NS_TEST_EXPECT_MSG_EQ(before, 6u, "delivered before the crash (0.5 .. 1.75 s)");
+        NS_TEST_EXPECT_MSG_EQ(during, 0u, "nothing through the crashed relay");
+        NS_TEST_EXPECT_MSG_EQ(after, 8u, "delivery recovers after the restart (4.0 .. 5.75 s)");
+        // Determinism (org rule 5): the same seed and schedule, the same bytes.
+        NS_TEST_EXPECT_MSG_EQ((RunChainWithFailures(schedule, 3) == first), true,
+                              "byte-identical rerun");
+
+        SwarmLifecycleOp op = SwarmLifecycleOp::Start;
+        NS_TEST_EXPECT_MSG_EQ(SwarmLifecycleHelper::ParseOp("shutdown", op) &&
+                                  op == SwarmLifecycleOp::Shutdown,
+                              true, "parse shutdown");
+        NS_TEST_EXPECT_MSG_EQ(SwarmLifecycleHelper::ParseOp("reboot", op), false,
+                              "an unknown operation is refused");
+    }
+};
+
+// --- SwarmRoutingBase
+// -------------------------------------------------------------
 
 class RoutingBaseTestCase : public TestCase {
 public:
     RoutingBaseTestCase()
-        : TestCase("glue: SwarmRoutingBase defers, releases, forwards, carries control") {}
+        : TestCase("glue: SwarmRoutingBase defers, releases, forwards, carries "
+                   "control") {}
 
 private:
     void DoRun() override {
@@ -422,7 +914,49 @@ private:
     }
 };
 
-// --- the router observer -------------------------------------------------------------
+/// An adapter that overrides RouteInput holds a transit packet through the
+/// protected Defer, as given (Termite's header stays on), and the base
+/// releases it unchanged once the route is learned (#40).
+class DeferFromAdapterTestCase : public TestCase {
+public:
+    DeferFromAdapterTestCase()
+        : TestCase("glue: an adapter's RouteInput holds a packet through Defer, "
+                   "as given") {}
+
+private:
+    void DoRun() override {
+        SwarmCoreSeed(1);
+        Line line("10Mbps");
+        Ptr<Node> n0 = line.nodes.Get(0);
+        Ptr<Node> n1 = line.nodes.Get(1);
+        Ptr<Node> n2 = line.nodes.Get(2);
+        const Ipv4Address n1a = Addr(n1, 1);
+        const Ipv4Address n2a = Addr(n2, 1);
+        Toy(n0)->routes[n2a] = n1a;
+        Toy(n1)->pending[n2a] = n2a;  // learned 0.5 s after the relay's discovery
+        Toy(n1)->holdMarked = true;
+
+        std::vector<std::string> rx;
+        Ptr<Socket> sink = Sink(n2, &rx);
+        Ptr<Socket> src = Source(n0);
+        Simulator::Schedule(Seconds(1.0), [&]() { SendUdp(src, n2a, 100); });
+        Simulator::Stop(Seconds(3));
+        Simulator::Run();
+
+        Ptr<DeferredPacketQueue> q = Toy(n1)->GetDeferredQueue();
+        NS_TEST_EXPECT_MSG_EQ(q->Stats().enqueued, 1u, "the relay held the packet");
+        NS_TEST_EXPECT_MSG_EQ(q->Stats().released, 1u, "and released it");
+        NS_TEST_EXPECT_MSG_EQ(Toy(n1)->discoveries, 1u, "Defer started the relay's discovery");
+        NS_TEST_EXPECT_MSG_EQ(rx.size(), 1u, "the held packet reached the destination");
+        NS_TEST_ASSERT_MSG_EQ(Toy(n2)->markedFrom.size(), 1u, "n2 saw the data packet");
+        NS_TEST_EXPECT_MSG_EQ(Toy(n2)->markedFrom[0], true,
+                              "what the adapter put on the packet was released with it");
+        Simulator::Destroy();
+    }
+};
+
+// --- the router observer
+// -------------------------------------------------------------
 
 /// Appends one line per trace-source event to `log`.
 void ConnectObserverTraces(Ptr<SwarmRoutingBase> p, std::vector<std::string>* log) {
@@ -583,12 +1117,14 @@ private:
     }
 };
 
-// --- IslLinkMonitor ----------------------------------------------------------------
+// --- IslLinkMonitor
+// ----------------------------------------------------------------
 
 class IslMonitorTestCase : public TestCase {
 public:
     IslMonitorTestCase()
-        : TestCase("glue: IslLinkMonitor neighbours, queue, service time, link down and up") {}
+        : TestCase("glue: IslLinkMonitor neighbours, queue, service time, link "
+                   "down and up") {}
 
 private:
     void DoRun() override {
@@ -663,7 +1199,8 @@ private:
     }
 };
 
-// --- wifi -----------------------------------------------------------------------------
+// --- wifi
+// -----------------------------------------------------------------------------
 
 /// Ad hoc 802.11a at a fixed 6 Mb/s, nodes on a line `spacing` metres apart.
 NetDeviceContainer AdhocWifi(NodeContainer& nodes, double spacing) {
@@ -691,7 +1228,8 @@ NetDeviceContainer AdhocWifi(NodeContainer& nodes, double spacing) {
 class WifiMonitorTestCase : public TestCase {
 public:
     WifiMonitorTestCase()
-        : TestCase("glue: WifiLinkMonitor backlog, service time, SINR, retry-limit failure") {}
+        : TestCase("glue: WifiLinkMonitor backlog, service time, SINR, "
+                   "retry-limit failure") {}
 
 private:
     void DoRun() override {
@@ -763,12 +1301,98 @@ private:
     }
 };
 
-// --- EnergyMetricHook ----------------------------------------------------------------
+/// The MAC gives an undeliverable data packet back to the protocol with the
+/// hop it came from, and ResendData sends it back there (ARA's backtracking,
+/// #40): n0 -> n1 -> n2 on Wi-Fi, n2 walks away, n1 backtracks to n0.
+class UndeliveredTestCase : public TestCase {
+public:
+    enum class Variant { Plain, Checksums, MacFragments };
+
+    explicit UndeliveredTestCase(Variant v)
+        : TestCase(std::string("glue: a packet the MAC gave up on comes back with its previous "
+                               "hop") +
+                   (v == Variant::Checksums      ? ", checksums on"
+                    : v == Variant::MacFragments ? "; a MAC fragment does not"
+                                                 : "")),
+          m_variant(v) {}
+
+private:
+    Variant m_variant;
+
+    void DoRun() override {
+        SwarmCoreSeed(1);
+        // A resent header must carry a valid checksum, or n0 drops it (#95).
+        GlobalValue::Bind("ChecksumEnabled", BooleanValue(m_variant == Variant::Checksums));
+        // 300 B: the 1000 B data packet leaves n1 in fragments, the warm-up does not.
+        Config::SetDefault("ns3::WifiRemoteStationManager::FragmentationThreshold",
+                           UintegerValue(m_variant == Variant::MacFragments ? 300 : 65535));
+        const uint32_t size = m_variant == Variant::MacFragments ? 1000 : 100;
+        NodeContainer nodes;
+        nodes.Create(3);
+        NetDeviceContainer devs = AdhocWifi(nodes, 50.0);
+        SwarmRoutingHelper("ns3::swarmtest::ToyProtocol").Install(nodes);
+        Ipv4AddressHelper a;
+        a.SetBase("10.1.1.0", "255.255.255.0");
+        a.Assign(devs);
+        WifiHelper::AssignStreams(devs, 10);
+        Ptr<Node> n0 = nodes.Get(0);
+        Ptr<Node> n1 = nodes.Get(1);
+        Ptr<Node> n2 = nodes.Get(2);
+        const Ipv4Address n0a = Addr(n0, 1);
+        const Ipv4Address n1a = Addr(n1, 1);
+        const Ipv4Address n2a = Addr(n2, 1);
+        Toy(n0)->routes[n2a] = n1a;
+        Toy(n1)->routes[n2a] = n2a;
+        Toy(n1)->backtrack = true;
+        Toy(n0)->noRouteFrom = n1a;  // the packet n1 sends back stops at n0
+
+        std::vector<std::string> rx;
+        Ptr<Socket> sink = Sink(n2, &rx);
+        Ptr<Socket> src = Source(n0);
+        Simulator::Schedule(Seconds(0.5), [&]() { SendUdp(src, n2a, 100); });  // ARP warm-up
+        Simulator::Schedule(Seconds(2.0), [&]() {
+            n2->GetObject<MobilityModel>()->SetPosition(Vector(5000.0, 0.0, 0.0));
+        });
+        Simulator::Schedule(Seconds(2.1), [&]() { SendUdp(src, n2a, size); });
+        Simulator::Stop(Seconds(4));
+        Simulator::Run();
+        GlobalValue::Bind("ChecksumEnabled", BooleanValue(false));
+        Config::SetDefault("ns3::WifiRemoteStationManager::FragmentationThreshold",
+                           UintegerValue(65535));
+
+        NS_TEST_EXPECT_MSG_EQ(rx.size(), 1u, "the warm-up arrived, the second packet could not");
+        if (m_variant == Variant::MacFragments) {
+            NS_TEST_EXPECT_MSG_EQ(Toy(n1)->failures.empty(), false, "the link failure is reported");
+            NS_TEST_EXPECT_MSG_EQ(Toy(n1)->undelivered.size(), 0u,
+                                  "a MAC fragment is no whole datagram: not handed back");
+            Simulator::Destroy();
+            return;
+        }
+        NS_TEST_ASSERT_MSG_EQ(Toy(n1)->undelivered.size(), 1u, "n1's MAC gave the packet back");
+        NS_TEST_EXPECT_MSG_EQ(Toy(n1)->undelivered[0].first, n2a, "toward n2");
+        NS_TEST_EXPECT_MSG_EQ(Toy(n1)->undelivered[0].second, n0a, "with n1's previous hop");
+        NS_TEST_ASSERT_MSG_EQ(Toy(n1)->resent.size(), 1u, "n1 backtracked once");
+        NS_TEST_EXPECT_MSG_EQ(Toy(n1)->resent[0], true, "ResendData sent it");
+        NS_TEST_EXPECT_MSG_EQ(Toy(n0)->undelivered.size(), 0u, "n0's frames all arrived");
+        bool backFromN1 = false;  // n0 originated both packets: only a returned one is listed
+        for (const Ipv4Address& from : Toy(n0)->dataFrom) {
+            backFromN1 |= from == n1a;
+        }
+        NS_TEST_EXPECT_MSG_EQ(backFromN1, true, "the data packet came back to n0 from n1");
+        NS_TEST_EXPECT_MSG_EQ(Toy(n0)->GetDeferredQueue()->Stats().enqueued, 1u,
+                              "n0 had no other route for it and held it");
+        Simulator::Destroy();
+    }
+};
+
+// --- EnergyMetricHook
+// ----------------------------------------------------------------
 
 class EnergyHookTestCase : public TestCase {
 public:
     EnergyHookTestCase()
-        : TestCase("glue: EnergyMetricHook residual fraction from the source's trace") {}
+        : TestCase("glue: EnergyMetricHook residual fraction from the source's "
+                   "trace") {}
 
 private:
     void DoRun() override {
@@ -808,7 +1432,8 @@ private:
     }
 };
 
-// --- determinism ---------------------------------------------------------------------
+// --- determinism
+// ---------------------------------------------------------------------
 
 /// Three wifi nodes in range of each other, the toy protocol with jittered
 /// hellos and jittered discovery (both drawn from the Rng port), energy
@@ -905,7 +1530,8 @@ std::string RunDeterminismScenario(uint32_t seed, bool monitors, bool observe = 
 class DeterminismTestCase : public TestCase {
 public:
     DeterminismTestCase()
-        : TestCase("glue: same seed, byte-identical output with and without the monitors and the "
+        : TestCase("glue: same seed, byte-identical output with and without the "
+                   "monitors and the "
                    "observer") {}
 
 private:
@@ -938,9 +1564,24 @@ private:
 }  // namespace
 
 std::vector<TestCase*> MakeGlueTestCases() {
-    return {new PortsTestCase,      new DeferredQueueTestCase, new RoutingBaseTestCase,
-            new IslMonitorTestCase, new WifiMonitorTestCase,   new EnergyHookTestCase,
-            new ObserverTestCase,   new DeterminismTestCase};
+    return {new PortsTestCase,
+            new DeferredQueueTestCase,
+            new DeferredQueueOrderTestCase,
+            new PortCacheTestCase,
+            new CancellableTimerTestCase,
+            new WireBufferTestCase,
+            new RoutingBaseTestCase,
+            new DeferFromAdapterTestCase,
+            new IslMonitorTestCase,
+            new WifiMonitorTestCase,
+            new UndeliveredTestCase(UndeliveredTestCase::Variant::Plain),
+            new UndeliveredTestCase(UndeliveredTestCase::Variant::Checksums),
+            new UndeliveredTestCase(UndeliveredTestCase::Variant::MacFragments),
+            new EnergyHookTestCase,
+            new ObserverTestCase,
+            new LifecycleTestCase,
+            new LifecycleHelperTestCase,
+            new DeterminismTestCase};
 }
 
 }  // namespace ns3::swarmtest

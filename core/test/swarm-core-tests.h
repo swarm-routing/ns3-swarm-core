@@ -16,9 +16,13 @@ namespace swarm::core::test {
 void TestWireRoundtrip(Checker& c);
 void TestWireFailsClosed(Checker& c);
 void TestWireFuzz(Checker& c);
+void TestWireWriterCorpus(Checker& c);
+void TestTimerPortDefaults(Checker& c);
 void TestVisitedPath(Checker& c);
 void TestVisitedPathWire(Checker& c);
 void TestDedupHistory(Checker& c);
+void TestDedupHistoryLifetime(Checker& c);
+void TestResetContract(Checker& c);
 void TestPheromoneTable(Checker& c);
 void TestPheromoneRows(Checker& c);
 void TestOnePassEvaporation(Checker& c);

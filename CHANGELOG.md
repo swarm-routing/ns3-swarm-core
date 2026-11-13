@@ -1,3 +1,16 @@
+## v0.2.0 (2026-11-13)
+
+### Feat
+
+- **base**: node shutdown, crash and restart on swarmroutingbase, with a helper that scripts failures for every arm (#98)
+- **core**: dedup history takes an optional entry lifetime next to the count cap (#94)
+- **base**: a packet the wi-fi mac gave up on comes back to the protocol, with its previous hop (#95)
+- **base**: defer is protected, so an adapter overriding routeinput holds its packets (#91)
+
+### Perf
+
+- **model**: deferred queue without o(n²) rebuilds, cached ports, cancellable timers, a non-allocating wire path (#97)
+
 ## v0.1.0 (2026-11-11)
 
 ### Feat

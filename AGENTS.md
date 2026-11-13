@@ -7,7 +7,7 @@ before changing anything. Org-wide conventions:
 
 ## What this repo is
 
-**Status: primitives in `core/` (#8), ns-3 glue in `model/` and `helper/` (#9).** CI runs every org quality gate on the module. API version 2 (`kSwarmCoreApiVersion`).
+**Status: primitives in `core/` (#8), ns-3 glue in `model/` and `helper/` (#9), node lifecycle (#43).** CI runs every org quality gate on the module. API version 2 (`kSwarmCoreApiVersion`).
 
 The shared ns-3 contrib module `swarm-core` (`libns3.<ver>-swarm-core`) every
 swarm-routing protocol links against: simulator-agnostic C++20 primitives
@@ -20,10 +20,12 @@ AntHocNet's dual-licensed `core/`, plus ns-3 cross-layer glue
 ```
 CMakeLists.txt      build_lib(LIBNAME swarm-core ...); ns-3 generates ns3/swarm-core-module.h
 core/               simulator-free primitives, namespace swarm::core — MIT OR GPL-2.0-only, carries core/LICENSE:
-                    swarm-types.h, swarm-ports.h (IClock, IRng, INeighborProvider, ITimerScheduler,
-                    ILinkState, ILinkQuality, IEnergy), swarm-wire.h (LE WireWriter/WireReader, version byte),
-                    swarm-visited-path.h, swarm-dedup-history.{h,cc}, swarm-pheromone-table.{h,cc} (flat
-                    per-destination rows: row() views, forEach, bestEntry; #45),
+                    swarm-types.h, swarm-ports.h (IClock, IRng, INeighborProvider, ITimerScheduler with
+                    cancellable timers, ILinkState, ILinkQuality, IEnergy), swarm-wire.h (LE WireWriter,
+                    FixedWireWriter<N> with no allocation, WireReader; version byte; #46),
+                    swarm-visited-path.h, swarm-dedup-history.{h,cc} (count cap, optional entry lifetime;
+                    #33), swarm-pheromone-table.{h,cc} (flat per-destination rows: row() views, forEach,
+                    bestEntry; #45),
                     swarm-selection.{h,cc} (roulette, evaporationFactor), swarm-route-decision.h,
                     swarm-link-metric.h (ILinkMetric), swarm-observer.{h,cc} (IRouterObserver, KindName,
                     CountingObserver -> RouterStats: bounded counters); CMakeLists.txt builds it alone, no ns-3
@@ -33,20 +35,27 @@ core/bench/         dev-only microbenchmarks (MIT OR GPL-2.0-only; Google Benchm
 model/              ns-3 glue — GPL-2.0-only; each file derived from AntHocNet names its source file and commit:
                     swarm-core.h (kSwarmCoreApiVersion, SwarmCoreSeed), swarm-ns3-ports.h (SwarmClock, SwarmRng,
                     SwarmTimerScheduler, address conversion, null ports), swarm-deferred-packet-queue.h
-                    (DeferredPacketQueue: MaxPackets 64 / MaxAge 30 s attributes, drop accounting),
+                    (DeferredPacketQueue: MaxPackets 64 / MaxAge 30 s attributes, drop accounting, in-place
+                    moves, Requeue in one batch; #46), swarm-wire-buffer.h (BufferWireWriter, ReadWireBytes:
+                    the core wire format straight into and out of an ns-3 Buffer, #46),
                     swarm-routing-base.h (SwarmRoutingBase: sockets, deferred route, prev-hop tag, ports, Execute;
                     Observer() -> ControlTx/ControlRx/RouteChanged/DataDecision/StateSize trace sources,
-                    GetRouterStats, the kind-name registry SetKindNames/GetKindName),
+                    GetRouterStats, the kind-name registry SetKindNames/GetKindName; node lifecycle #43:
+                    Shutdown/Crash/Start, the DoNodeShutdown/DoNodeCrash/DoNodeStart hooks, the Lifecycle
+                    trace source, NodeDown drops),
                     swarm-wifi-link-monitor.h (ILinkState + ILinkQuality + retry-limit LinkFailure),
                     swarm-isl-link-monitor.h (INeighborProvider + ILinkState + LinkChange on p2p),
                     swarm-energy-metric-hook.h (IEnergy from an EnergySource's RemainingEnergy trace)
 helper/             swarm-routing-helper.h: SwarmRoutingHelper (one-call Install, AssignStreams, SetKindNames,
-                    CollectStats -> SwarmRoutingStats), SwarmMonitorHelper
+                    CollectStats -> SwarmRoutingStats), SwarmMonitorHelper; swarm-lifecycle-helper.h:
+                    SwarmLifecycleHelper (shutdown, crash, start at given times or from a schedule file, the
+                    protocol's lifecycle plus Ipv4 SetDown/SetUp, so stock arms see the same failure; #43)
 test/               swarm-core test suite: wraps every core/test/ function as a TestCase, plus the glue's
                     (swarm-glue-tests.cc: a toy protocol on the base, a 2-3 node scenario per monitor, and
                     the router observer's trace sources and counters, same-seed byte-identical output
                     with and without every monitor and the observer)
-examples/           swarm-core-seed: the determinism gate's program (seeded draws + a roulette sequence through IRng)
+examples/           swarm-core-seed: the determinism gate's program (seeded draws + a roulette sequence through IRng);
+                    swarm-core-queue-bench: dev-only drain cost of the deferred queue (#46), not run by CI
 tools/release/      dist.sh: the release asset (swarm-core-<ver>.tar.gz), checked in a clean ns3-dev tree; `make dist` — MIT OR GPL-2.0-only
 .cz.toml, VERSION   Commitizen config and the version it bumps; releases run through release.yml
 .github/workflows/  ci.yml (reusable-ns3-ci: strict warnings, coverage, determinism, format, headers), pr-title.yml,
@@ -289,6 +298,8 @@ Code says the plugin is missing (it was called
 | Check a diff against the org golden rules before a PR or a review | `swarm-routing/.github` `tools/protocol-review/check_invariants.py` | `protocol-review` |
 | Bring the README, AGENTS/CLAUDE/CONTEXT and docs/ to the org documentation standard | `swarm-routing/.github` `tools/docs-review/check_docs.py` | `docs-review` |
 | Find new papers on a topic, or confirm a reference (Crossref, Semantic Scholar, OpenAlex; free sources only) | `swarm-routing/.github` `tools/lit-search/lit_search.py` | `lit-search` |
+| Give a repository its docs/references.bib, or review it: every paper and org release it relies on, confirmed from Crossref, DataCite or Zenodo (a work with no DOI, such as a thesis, from its publisher's or institution's record, with its url), DOI links first, the fidelity Sources table and CITATION.cff references generated from it | `swarm-routing/.github` `tools/fidelity/fidelity.py` (bib), `tools/zenodo/zenodo.py` | `references` |
+| Take open pull requests from review to merge: CI, mergeable state and unresolved review threads in one view, each finding verified and fixed or answered, then merged when green (auto-merge where the repository has a merge queue) | `swarm-routing/.github` `tools/pr-status/pr_status.py` | `pr-shepherd` |
 | Measure what a Claude Code session loads from the agent files (`CLAUDE.md` and its `@` imports, or `AGENTS.md` alone), or where a finished Claude Code session's tokens went, before cutting or adding agent text | `swarm-routing/skills` `tools/token-audit/token_audit.py` | `token-audit` |
 
 A skill only this repository uses lives in its own `.claude/skills/`; a skill
@@ -425,6 +436,7 @@ because the issue threads were thorough. Caveman the chat, not the record.
 | Source of the primitives | AntHocNet `core/include/anthocnet/core/`, `core/src/` (MIT OR GPL-2.0-only → `core/` here); each `core/` file names its source file and commit |
 | Use or extend a primitive | `core/swarm-*.h` (the API, documented in place), its test in `core/test/`, the list in `core/test/all-tests.cc` |
 | Report a protocol's internals (control by kind, route changes, data decisions, state footprint) | its core calls `swarm::core::IRouterObserver` (`core/swarm-observer.h`), the adapter passes `&Observer()` and registers its `KindName` table; read with the trace sources or `SwarmRoutingHelper::CollectStats` (#42; consumer: swarm-routing/ns3-tools#91) |
+| Script node failures (shutdown, crash, restart) the same way for every arm | `SwarmLifecycleHelper` (`helper/swarm-lifecycle-helper.h`: times or a `<time s> <node> <op>` file); a protocol clears and restarts its state in `DoNodeShutdown`/`DoNodeCrash`/`DoNodeStart` on `SwarmRoutingBase`, and its core uses each primitive's `clear()` (the reset contract) (#43) |
 | Write a protocol's ns-3 adapter | derive from `SwarmRoutingBase` (`model/swarm-routing-base.h`: the hooks, services and ports), install with `SwarmRoutingHelper`; the toy protocol in `test/swarm-glue-tests.cc` is a minimal example |
 | Merge a change to `core/` | every protocol repository that pins swarm-core (ARA, BeeAdHoc, Termite, HOPNET) goes red on its `swarm-core / pin` check as soon as it lands, and its open PRs are blocked: open the pin-bump PR in each (`SWARM_CORE_REF` in `core/CMakeLists.txt`, the `Makefile`, every workflow's `core-deps`; the failing check names each place), verified with its core tests, until org-bot opens them (swarm-routing/.github#190, #208) |
 | Source of the glue | AntHocNet `ns3/baselines/adaptive/model/adaptive-routing-base.*`, `ns3/anthocnet/model/anthocnet-{adapters,rqueue,routing-protocol}.*` (GPL-2.0-only → `model/` here) |

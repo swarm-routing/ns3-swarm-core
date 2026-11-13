@@ -67,7 +67,11 @@ namespace ns3 {
 class SwarmPrevHopTag : public Tag {
 public:
     SwarmPrevHopTag() = default;
-    explicit SwarmPrevHopTag(Ipv4Address sender) : m_sender(sender) {}
+    /// `from`: the hop the sender had the packet from (0.0.0.0 when the
+    /// sender originated it), so a sender whose MAC gives the packet back
+    /// still knows its own previous hop (OnDataUndelivered, #40).
+    explicit SwarmPrevHopTag(Ipv4Address sender, Ipv4Address from = Ipv4Address())
+        : m_sender(sender), m_from(from) {}
 
     static TypeId GetTypeId();
     TypeId GetInstanceTypeId() const override;
@@ -77,9 +81,25 @@ public:
     void Print(std::ostream& os) const override;
 
     Ipv4Address Get() const { return m_sender; }
+    Ipv4Address GetFrom() const { return m_from; }
 
 private:
     Ipv4Address m_sender;
+    Ipv4Address m_from;
+};
+
+/// A node's lifecycle state (#43).
+enum class SwarmNodeState : uint8_t {
+    Up = 0,
+    Down = 1,
+};
+
+/// The lifecycle operations, after INET's NodeStartOperation,
+/// NodeShutdownOperation and NodeCrashOperation (#43).
+enum class SwarmLifecycleOp : uint8_t {
+    Start = 0,     ///< the node comes (back) up
+    Shutdown = 1,  ///< graceful: the protocol may announce it is leaving
+    Crash = 2,     ///< abrupt: nothing is sent, peers are not told
 };
 
 class SwarmRoutingBase : public Ipv4RoutingProtocol {
@@ -93,6 +113,26 @@ public:
     virtual int64_t AssignStreams(int64_t stream);
 
     Ptr<DeferredPacketQueue> GetDeferredQueue() const { return m_queue; }
+
+    // --- node lifecycle (#43) -------------------------------------------------
+
+    /// Graceful shutdown: DoNodeShutdown runs first, while the node is still
+    /// up (so the protocol can send its leaving control), then the base
+    /// cancels every timer it owns (Timers() and the purge timer), drops every
+    /// deferred packet as NodeDown, and refuses routing until Start. A no-op
+    /// when already down. Completes in zero simulated time.
+    void Shutdown();
+    /// Crash: the node is down at once, so DoNodeCrash can send nothing; then
+    /// the same teardown as Shutdown. A no-op when already down.
+    void Crash();
+    /// Brings a down node back: routing is accepted again, the purge timer
+    /// restarts, then DoNodeStart re-initialises the protocol. A no-op when up.
+    void Start();
+    SwarmNodeState GetNodeState() const { return m_state; }
+    bool IsDown() const { return m_state == SwarmNodeState::Down; }
+
+    /// Lifecycle: the node changed state (`state`, by `op`).
+    using LifecycleTracedCallback = void (*)(SwarmNodeState state, SwarmLifecycleOp op);
 
     // --- the router observer ---------------------------------------------------
 
@@ -140,6 +180,9 @@ public:
 protected:
     void DoInitialize() override;
     void DoDispose() override;
+    /// Marks the cached ports stale, so a monitor aggregated to the node
+    /// later is still seen (#46). An adapter overriding it chains up.
+    void NotifyNewAggregate() override;
 
     // --- hooks: the protocol's adapter -----------------------------------------
 
@@ -171,26 +214,63 @@ protected:
     virtual void OnDataForwarded(Ptr<const Packet> /*p*/, const Ipv4Header& /*header*/,
                                  Ipv4Address /*next*/) {}
 
-    /// The link to `neighbor` failed (MAC retry limit, or its interface went down).
+    /// The link to `neighbor` failed (MAC retry limit, or its interface went
+    /// down).
     virtual void OnLinkFailure(Ipv4Address /*neighbor*/) {}
 
     /// A point-to-point link to `neighbor` came up.
     virtual void OnLinkUp(Ipv4Address /*neighbor*/) {}
 
-    // --- services ----------------------------------------------------------------
+    /// The Wi-Fi MAC gave up on data packet `p` (IP header removed, `header`
+    /// its header) at its retry limit toward `failedNext`; `prev` is the hop
+    /// this node had it from (Ipv4Address() if it originated here). The
+    /// default does nothing: the packet is lost, as before. A protocol that
+    /// re-routes or sends it back (ARA's backtracking) calls ResendData. Only
+    /// a WifiLinkMonitor reports this; OnLinkFailure still fires first (#40).
+    virtual void OnDataUndelivered(Ptr<const Packet> /*p*/, const Ipv4Header& /*header*/,
+                                   Ipv4Address /*failedNext*/, Ipv4Address /*prev*/) {}
 
-    /// One-hop broadcast of a control message on every interface.
+    /// Lifecycle hooks (#43). Each defaults to nothing; the base does the
+    /// common part (timers, deferred queue, refusing routing) around them.
+    /// DoNodeShutdown: the node is still up; send the protocol's leaving
+    /// control here if it has one, then clear the protocol's state.
+    virtual void DoNodeShutdown() {}
+    /// DoNodeCrash: the node is already down (nothing it sends leaves); clear
+    /// the protocol's state.
+    virtual void DoNodeCrash() {}
+    /// DoNodeStart: the node is up again; re-initialise and restart periodic
+    /// timers, with fresh jitter drawn from Rng() (org rule 5).
+    virtual void DoNodeStart() {}
+
+    // --- services
+    // ----------------------------------------------------------------
+
+    /// One-hop broadcast of a control message on every interface. Nothing
+    /// is sent while the node is down; neither is a unicast.
     void BroadcastControl(Ptr<Packet> p);
     /// One-hop unicast of a control message to a neighbour.
     void UnicastControl(Ptr<Packet> p, Ipv4Address neighbor);
     /// Forwards a data packet to `next` (stamps SwarmPrevHopTag).
     void ForwardData(Ptr<const Packet> p, const Ipv4Header& header, Ipv4Address next,
                      const UnicastForwardCallback& ucb);
+    /// Sends data packet `p` (from OnDataUndelivered) to neighbour `next`,
+    /// as ForwardData does; its TTL drops by one more hop. Calls no hook: the
+    /// protocol records what it wants. False when it cannot be sent (no
+    /// forwarding callback seen yet, or no interface toward `next`).
+    bool ResendData(Ptr<const Packet> p, const Ipv4Header& header, Ipv4Address next);
     /// Sends every held packet to `dst` that now has a next hop; the rest go
     /// back to the queue, keeping their first enqueue time.
     void ReleaseDeferred(Ipv4Address dst);
     /// Drops every held packet to `dst` (a core's DiscardPending).
     void DiscardDeferred(Ipv4Address dst);
+    /// Holds a data packet RouteInput has no next hop for, then calls
+    /// StartDiscovery(dst). The packet is held as given, so a protocol header
+    /// the adapter put on it stays on: an adapter that overrides RouteInput
+    /// (Termite's, whose header rides on every data packet) holds its packets
+    /// here too. ReleaseDeferred hands it, unchanged, to SelectNextHop,
+    /// OnDataForwarded and ForwardData (swarm-routing/ns3-swarm-core#40).
+    void Defer(Ptr<const Packet> p, const Ipv4Header& header, const UnicastForwardCallback& ucb,
+               const ErrorCallback& ecb);
 
     /// Carries out the decisions a core returns that need no data packet in
     /// hand: Unicast and Broadcast of a control message (`encode` turns the
@@ -233,6 +313,9 @@ protected:
     const swarm::core::IClock& Clock() const { return m_clock; }
     SwarmRng& Rng() { return m_rng; }
     swarm::core::ITimerScheduler& Timers() { return m_timers; }
+    /// The ports below are looked up once and cached (#46); the cache is
+    /// refreshed when the stack is set, at DoInitialize, when an interface
+    /// comes up and when an object is aggregated to the node.
     /// The node's WifiLinkMonitor, else its IslLinkMonitor, else a null port.
     const swarm::core::ILinkState& LinkState() const;
     /// The node's WifiLinkMonitor, else a null port.
@@ -246,13 +329,18 @@ private:
     Ptr<Node> NodeOf() const;
     Ptr<Ipv4Route> LoopbackRoute(const Ipv4Header& header, Ptr<NetDevice> oif) const;
     Ptr<Ipv4Route> DirectRoute(Ipv4Address dst, Ipv4Address next, Ipv4Address src) const;
+    /// The same, through interface `ifIdx` (InterfaceTowards(next)).
+    Ptr<Ipv4Route> DirectRoute(Ipv4Address dst, Ipv4Address next, Ipv4Address src,
+                               int32_t ifIdx) const;
+    void RefreshPorts() const;
     int32_t InterfaceTowards(Ipv4Address next) const;
-    void Defer(Ptr<const Packet> p, const Ipv4Header& header, const UnicastForwardCallback& ucb,
-               const ErrorCallback& ecb);
     void PurgeTick();
     void RecvSocket(Ptr<Socket> socket);
     void WifiLinkFailed(Ipv4Address neighbor, Mac48Address mac);
+    void WifiUndelivered(Ptr<const Packet> datagram, Ipv4Address neighbor);
     void IslLinkChanged(Ipv4Address peer, bool up);
+    /// The common teardown of Shutdown and Crash.
+    void GoDown(SwarmLifecycleOp op);
 
     /// Counts every event and fires the matching trace source.
     class TracingObserver : public swarm::core::IRouterObserver {
@@ -277,7 +365,14 @@ private:
     /// Sockets in creation (interface) order: a map keyed by Ptr<Socket> would
     /// order them by heap address, and MainAddress(), the route fallbacks and
     /// the broadcast order would then vary between runs (org rule 5).
-    using SocketList = std::vector<std::pair<Ptr<Socket>, Ipv4InterfaceAddress>>;
+    /// A control socket, its interface address and that interface's index
+    /// (kept, so no per-packet lookup is needed, #46).
+    struct BoundSocket {
+        Ptr<Socket> socket;
+        Ipv4InterfaceAddress iface;
+        int32_t ifIndex;
+    };
+    using SocketList = std::vector<BoundSocket>;
     SocketList m_sockets;
     SocketList m_bcastSockets;
     Ptr<DeferredPacketQueue> m_queue;
@@ -295,6 +390,18 @@ private:
     /// Set across a control SendTo, so RouteOutput answers with a one-hop
     /// route to the neighbour instead of asking the protocol.
     Ipv4Address m_directTo;
+    /// Ipv4L3Protocol's forwarding callback, the same for every packet: kept
+    /// from RouteInput so ResendData can send outside it.
+    UnicastForwardCallback m_ucb;
+    SwarmNodeState m_state = SwarmNodeState::Up;
+    TracedCallback<SwarmNodeState, SwarmLifecycleOp> m_lifecycle;
+    /// The cached ports (raw: they live in the node's aggregate, which holds
+    /// this protocol too; dropped at dispose).
+    mutable bool m_portsStale = true;
+    mutable const swarm::core::ILinkState* m_linkStatePort = nullptr;
+    mutable const swarm::core::ILinkQuality* m_linkQualityPort = nullptr;
+    mutable const swarm::core::INeighborProvider* m_neighborsPort = nullptr;
+    mutable const swarm::core::IEnergy* m_energyPort = nullptr;
 };
 
 }  // namespace ns3
