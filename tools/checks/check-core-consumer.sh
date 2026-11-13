@@ -11,6 +11,10 @@
 #   - no -Werror on its own sources, nor on swarm-core's inside its build;
 #   - its own test (the consumer program, linked against the library) passes.
 #
+# Then the same consumer with -DSWARM_CORE_SANITIZE=ON (in BUILD-DIR/sanitized):
+# it must link, which needs the sanitizer runtime on the consumer's link line,
+# and its test must pass.
+#
 # CI runs it in the `core` check (.github/workflows/core.yml). Needs cmake, a
 # C++20 compiler and python3; no ns-3.
 set -euo pipefail
@@ -47,4 +51,10 @@ sys.exit(1 if bad else 0)
 PY
 
 ctest --test-dir "$build" --output-on-failure >/dev/null || fail "the consumer's test failed"
-echo "check-core-consumer: ok (links swarm::core; no swarm_core_tests target, no swarm-core ctest entry, no -Werror)"
+
+cmake -S "$repo/core/test/consumer" -B "$build/sanitized" -DSWARM_CORE_SANITIZE=ON >/dev/null
+cmake --build "$build/sanitized" -j "$(nproc)" >/dev/null ||
+    fail "the consumer does not build with SWARM_CORE_SANITIZE=ON"
+ctest --test-dir "$build/sanitized" --output-on-failure >/dev/null ||
+    fail "the consumer's test failed with SWARM_CORE_SANITIZE=ON"
+echo "check-core-consumer: ok (links swarm::core, also with SWARM_CORE_SANITIZE=ON; no swarm_core_tests target, no swarm-core ctest entry, no -Werror)"

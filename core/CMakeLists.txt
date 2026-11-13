@@ -54,6 +54,12 @@ add_library(swarm::core ALIAS swarm_core)
 target_include_directories(swarm_core PUBLIC ${CMAKE_CURRENT_SOURCE_DIR})
 # A consumer's targets that link this one compile at C++20 or later.
 target_compile_features(swarm_core PUBLIC cxx_std_20)
+if(SWARM_CORE_SANITIZE)
+  # The objects are instrumented, so whatever links them needs the sanitizer
+  # runtime: add_link_options above reaches this directory's targets only, not
+  # a consumer's executable.
+  target_link_options(swarm_core INTERFACE -fsanitize=address,undefined)
+endif()
 if(NOT SWARM_CORE_TOP_LEVEL)
   # In someone else's build: our warnings on our own sources only, and not as
   # errors (their compiler may know warnings ours does not).

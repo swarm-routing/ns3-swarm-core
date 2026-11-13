@@ -2,7 +2,7 @@
 // SPDX-License-Identifier: MIT OR GPL-2.0-only
 //
 // The scratch consumer of core/ (#100, CMakeLists.txt beside this file): it
-// calls one function compiled in the library, so the link is real.
+// calls one function compiled into swarm_core, so the link is real.
 #include "swarm-selection.h"
 
 #include <array>
