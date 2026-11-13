@@ -86,6 +86,73 @@ void TestDedupHistory(Checker& c) {
     c.check(one.size() == 1 && one.seen(1, 2), "capacity 1 keeps the newest");
 }
 
+void TestDedupHistoryLifetime(Checker& c) {
+    // No max age: the time-aware calls behave as the plain ones (#33).
+    DedupHistory plain(2);
+    c.check(!plain.maxAge() && plain.record(1, 1, 0.0), "no age: record");
+    c.check(plain.seen(1, 1, 1e9) && !plain.record(1, 1, 1e9), "no age: an entry never expires");
+    c.check(plain.purge(1e9) == 0 && plain.size() == 1, "no age: purge is a no-op");
+
+    DedupHistory h(4, 30.0);
+    c.check(h.maxAge() && *h.maxAge() == 30.0, "max age kept");
+    c.check(h.record(1, 1, 10.0) && h.record(2, 1, 20.0), "timed records");
+    c.check(!h.record(1, 1, 39.999) && h.seen(1, 1, 39.999), "live until just before the age");
+    c.check(!h.seen(1, 1, 40.0) && h.seen(1, 1),
+            "expired at exactly the age; plain seen ignores it");
+    c.check(h.size() == 2, "an expired entry stays until purged");
+    c.check(h.purge(40.0) == 1 && !h.seen(1, 1) && h.seen(2, 1, 40.0), "purge forgets the expired");
+    c.check(h.purge(40.0) == 0, "purge is idempotent");
+
+    // A fractional boundary: 1.1 + 0.2 is expired at exactly 1.1 + 0.2, even
+    // though (1.1 + 0.2) - 1.1 rounds below 0.2.
+    DedupHistory frac(2, 0.2);
+    frac.record(9, 9, 1.1);
+    c.check(frac.seen(9, 9, 1.1 + 0.19) && !frac.seen(9, 9, 1.1 + 0.2), "fractional boundary");
+    c.check(frac.record(9, 9, 1.1 + 0.2) && frac.purge(1.1 + 0.2 + 0.2) == 1,
+            "re-recorded, purged");
+
+    // An expired entry recorded again is new, and becomes the newest (FIFO).
+    DedupHistory r(2, 5.0);
+    r.record(7, 1, 0.0);
+    r.record(7, 2, 3.0);
+    c.check(r.record(7, 1, 5.0) && r.size() == 2, "an expired duplicate is recorded afresh");
+    c.check(r.record(7, 3, 6.0) && !r.seen(7, 2) && r.seen(7, 1, 6.0), "it moved to the back");
+
+    // The count cap and the age together: the cap evicts the oldest first even
+    // when nothing has expired; the age frees entries before the cap does.
+    DedupHistory both(3, 10.0);
+    both.record(1, 1, 0.0);
+    both.record(1, 2, 1.0);
+    both.record(1, 3, 2.0);
+    c.check(both.record(1, 4, 3.0) && !both.seen(1, 1) && both.size() == 3, "the cap still holds");
+    c.check(both.purge(12.5) == 2 && both.size() == 1 && both.seen(1, 4, 12.5),
+            "the age frees room");
+    c.check(both.record(2, 1, 13.0) && both.record(2, 2, 13.0) && both.size() == 3,
+            "room is reused");
+
+    // Untimed records never expire, even with an age; purge keeps FIFO order.
+    DedupHistory mixed(4, 1.0);
+    mixed.record(1, 1);
+    mixed.record(1, 2, 0.0);
+    mixed.record(1, 3);
+    c.check(mixed.purge(5.0) == 1 && mixed.seen(1, 1, 5.0) && mixed.seen(1, 3, 5.0),
+            "untimed stay");
+    mixed.record(1, 4);
+    mixed.record(1, 5);
+    mixed.record(1, 6);
+    c.check(!mixed.seen(1, 1) && mixed.seen(1, 3), "order kept across a purge");
+
+    // A non-finite age is no age; a negative one is 0 (expired at once).
+    c.check(!DedupHistory(2, std::numeric_limits<double>::infinity()).maxAge(), "inf age is none");
+    DedupHistory zero(2, -1.0);
+    c.check(zero.record(3, 3, 1.0) && !zero.seen(3, 3, 1.0), "negative age reads as 0");
+
+    // clear() resets to the freshly constructed state (#43): cap and age kept.
+    h.clear();
+    c.check(h.size() == 0 && h.capacity() == 4 && h.maxAge() && *h.maxAge() == 30.0,
+            "clear keeps config");
+}
+
 void TestPheromoneTable(Checker& c) {
     PheromoneTable t(4);
     c.check(t.empty() && t.capacity() == 4, "new table");

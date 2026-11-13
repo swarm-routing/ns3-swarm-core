@@ -11,13 +11,14 @@ namespace swarm::core::test {
 
 namespace {
 
-constexpr std::array<NamedTest, 19> kTests{{
+constexpr std::array<NamedTest, 20> kTests{{
     {"wire: roundtrip of every field", TestWireRoundtrip},
     {"wire: the reader fails closed", TestWireFailsClosed},
     {"wire: seeded fuzz (fails or round-trips to itself)", TestWireFuzz},
     {"visited path: bounded", TestVisitedPath},
     {"visited path: wire", TestVisitedPathWire},
     {"dedup history: bounded FIFO", TestDedupHistory},
+    {"dedup history: optional entry lifetime", TestDedupHistoryLifetime},
     {"pheromone table: bounded", TestPheromoneTable},
     {"pheromone table: rows, forEach, best, add", TestPheromoneRows},
     {"pheromone table: one-pass evaporation", TestOnePassEvaporation},
