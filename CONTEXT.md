@@ -16,8 +16,27 @@ evaporation, `RouteDecision` and the `ILinkMetric` seam. `model/` and `helper/`
 hold the ns-3 glue, taken from AntHocNet's GPL-only ns-3 modules (its adaptive
 `RoutingBase`, pending queue and MAC signals): `SwarmRoutingBase`,
 `DeferredPacketQueue`, `WifiLinkMonitor`, `IslLinkMonitor`, `EnergyMetricHook`
-and the helpers. API version 2. Next: ARA, BeeAdHoc and Termite build their
-adapters on both. Plan and status: epic #6.
+and the helpers. API version 2 (`kSwarmCoreApiVersion`).
+
+**Added since, all on `main`.** The router observer (#42): a protocol's core
+reports control packets by kind, route changes, data decisions and its state
+footprint to `IRouterObserver` (`core/swarm-observer.h`), and
+`SwarmRoutingBase` turns that into trace sources and the counters
+`SwarmRoutingHelper::CollectStats` returns. An optional entry lifetime on
+`DedupHistory`, next to its count cap (#33). The undelivered path (#40): a
+data packet the Wi-Fi MAC gave up on comes back to the protocol with its
+previous hop (`OnDataUndelivered`), which may send it elsewhere with
+`ResendData`. Cancellable timers on `ITimerScheduler`, `FixedWireWriter` and
+the wire-buffer path (`model/swarm-wire-buffer.h`: the core wire format
+written straight into and read out of an ns-3 `Buffer`), and a deferred queue
+without O(n²) rebuilds (#46). The node lifecycle (#43): `Shutdown`, `Crash`
+and `Start` on `SwarmRoutingBase`, with `SwarmLifecycleHelper` scripting the
+same failure for every arm.
+
+ARA, BeeAdHoc and Termite have their ns-3 modules on `SwarmRoutingBase`
+(each repository's AGENTS.md); HOPNET's is planned. The plan is
+[`docs/roadmap.md`](docs/roadmap.md); epic #6, which carried it until v0.1.0,
+is closed.
 
 **Two things the glue does differently from AntHocNet, on purpose.**
 `EnergyMetricHook` never calls `EnergySource::GetRemainingEnergy()`: that call
@@ -44,12 +63,23 @@ service-time sample (AntHocNet's `NotifyAckedMpdu` counts it).
   protocol learns a route or is dropped through its error callback.
 - **Roulette selection**: pick a next hop with probability proportional to
   (pheromone / best)^beta, one `IRng::uniform()` draw per pick.
+- **Router observer**: the optional `IRouterObserver` a protocol's core
+  reports to (`core/swarm-observer.h`); it only listens, so a run's output is
+  byte-identical with and without one. `SwarmRoutingBase::Observer()` is the
+  adapter's, behind the `ControlTx`, `ControlRx`, `RouteChanged`,
+  `DataDecision` and `StateSize` trace sources.
+- **Lifecycle state**: a node is `Up` or `Down` (`SwarmNodeState`). A
+  **shutdown** is graceful: `DoNodeShutdown` runs while the node is still up,
+  so the protocol may announce it is leaving. A **crash** is abrupt: the node
+  is down at once and nothing it sends leaves. `Start` brings it back and
+  the protocol re-initialises (`DoNodeStart`). Each change fires the `Lifecycle` trace source.
 
 ## Open questions
 
 - **Which primitives count as shared** (golden rule 11): #8 took the ports, wire
   helpers, visited path, dedup history, pheromone table, roulette, evaporation,
-  `RouteDecision` and `ILinkMetric`. AntHocNet's `GenerationTracker`, its
-  regular/virtual table split, reinforcement formula, `IKinematics`,
-  `IRouterObserver` and concrete metrics stayed behind; the maintainer confirms
+  `RouteDecision` and `ILinkMetric`; `IRouterObserver` followed, widened for
+  every protocol (#42, `core/swarm-observer.h`). AntHocNet's
+  `GenerationTracker`, its regular/virtual table split, reinforcement formula,
+  `IKinematics` and concrete metrics stayed behind; the maintainer confirms
   the list.

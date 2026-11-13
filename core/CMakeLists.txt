@@ -8,6 +8,12 @@
 #   cmake -S core -B build/core && cmake --build build/core && ctest --test-dir build/core
 #
 # SWARM_CORE_SANITIZE=ON adds ASan + UBSan, as the sanitized CI leg.
+# SWARM_CORE_TESTS builds the tests and registers them with ctest; it is ON
+# when this is the top-level project and OFF when another project adds this
+# directory (add_subdirectory, or FetchContent with SOURCE_SUBDIR core), which
+# then gets the library target swarm_core (alias swarm::core) alone, with
+# no -Werror and no test of ours in its ctest (#100; README "Use core/ from
+# another CMake project").
 # SWARM_CORE_BENCH=ON adds the microbenchmarks (bench/, dev-only: Google
 # Benchmark fetched at a pinned commit, checked by its hash; nothing shipped
 # links it).
@@ -18,37 +24,55 @@ set(CMAKE_CXX_STANDARD 20)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 set(CMAKE_CXX_EXTENSIONS OFF)
 
+# Top-level: `cmake -S core`. (PROJECT_IS_TOP_LEVEL needs CMake 3.21.)
+if(CMAKE_SOURCE_DIR STREQUAL CMAKE_CURRENT_SOURCE_DIR)
+  set(SWARM_CORE_TOP_LEVEL ON)
+else()
+  set(SWARM_CORE_TOP_LEVEL OFF)
+endif()
+
+option(SWARM_CORE_TESTS "Build the tests and register them with ctest" ${SWARM_CORE_TOP_LEVEL})
 option(SWARM_CORE_SANITIZE "Build with AddressSanitizer and UndefinedBehaviorSanitizer" OFF)
 option(SWARM_CORE_BENCH "Build the microbenchmarks (fetches Google Benchmark)" OFF)
 # The strict warnings the ns-3 CI applies to this module (ns3-containers'
 # swarm-quality.cmake), so a local build catches what CI would.
-add_compile_options(-Wall -Wextra -Wpedantic -Wshadow -Wnon-virtual-dtor -Wold-style-cast
-                    -Wcast-align -Woverloaded-virtual -Wnull-dereference -Wformat=2 -Werror)
+set(SWARM_CORE_WARNINGS -Wall -Wextra -Wpedantic -Wshadow -Wnon-virtual-dtor -Wold-style-cast
+                        -Wcast-align -Woverloaded-virtual -Wnull-dereference -Wformat=2)
+if(SWARM_CORE_TOP_LEVEL)
+  add_compile_options(${SWARM_CORE_WARNINGS} -Werror)
+endif()
 if(SWARM_CORE_SANITIZE)
   add_compile_options(-fsanitize=address,undefined -fno-sanitize-recover=all -fno-omit-frame-pointer)
   add_link_options(-fsanitize=address,undefined)
 endif()
 
-add_library(swarm_core STATIC
-  swarm-dedup-history.cc
-  swarm-observer.cc
-  swarm-pheromone-table.cc
-  swarm-selection.cc
-)
+# The source list, shared with the ns-3 module's CMakeLists.txt.
+include(${CMAKE_CURRENT_LIST_DIR}/swarm-core-sources.cmake)
+
+add_library(swarm_core STATIC ${SWARM_CORE_SOURCES})
+add_library(swarm::core ALIAS swarm_core)
 target_include_directories(swarm_core PUBLIC ${CMAKE_CURRENT_SOURCE_DIR})
+# A consumer's targets that link this one compile at C++20 or later.
+target_compile_features(swarm_core PUBLIC cxx_std_20)
+if(SWARM_CORE_SANITIZE)
+  # The objects are instrumented, so whatever links them needs the sanitizer
+  # runtime: add_link_options above reaches this directory's targets only, not
+  # a consumer's executable.
+  target_link_options(swarm_core INTERFACE -fsanitize=address,undefined)
+endif()
+if(NOT SWARM_CORE_TOP_LEVEL)
+  # In someone else's build: our warnings on our own sources only, and not as
+  # errors (their compiler may know warnings ours does not).
+  target_compile_options(swarm_core PRIVATE ${SWARM_CORE_WARNINGS})
+endif()
 
-add_executable(swarm_core_tests
-  test/all-tests.cc
-  test/run-core-tests.cc
-  test/test-observer.cc
-  test/test-selection.cc
-  test/test-structures.cc
-  test/test-wire.cc
-)
-target_link_libraries(swarm_core_tests PRIVATE swarm_core)
+if(SWARM_CORE_TESTS)
+  add_executable(swarm_core_tests test/run-core-tests.cc ${SWARM_CORE_TEST_SOURCES})
+  target_link_libraries(swarm_core_tests PRIVATE swarm_core)
 
-enable_testing()
-add_test(NAME swarm-core COMMAND swarm_core_tests)
+  enable_testing()
+  add_test(NAME swarm-core COMMAND swarm_core_tests)
+endif()
 
 if(SWARM_CORE_BENCH)
   include(FetchContent)

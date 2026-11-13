@@ -23,18 +23,47 @@
 The shared ns-3 contrib module `swarm-core` that every swarm-routing protocol
 links against: simulator-agnostic C++20 primitives (visited path, little-endian
 wire helpers, pheromone table, route decision, link-state and link-metric
-seams) and ns-3 cross-layer glue. **Status:** the primitives are in `core/`
+seams) and ns-3 cross-layer glue. **Status:** primitives in `core/`
 (namespace `swarm::core`, `MIT OR GPL-2.0-only`, buildable and testable without
 ns-3); the ns-3 glue is in `model/` and `helper/` (`GPL-2.0-only`):
 `SwarmRoutingBase`, the `Ipv4RoutingProtocol` a protocol's adapter derives from;
 `DeferredPacketQueue`; the link monitors `WifiLinkMonitor`, `IslLinkMonitor` and
-`EnergyMetricHook`, which implement the core's ports; and `SwarmRoutingHelper`,
-which installs a protocol and its monitors in one call. CI runs every org
-quality gate.
+`EnergyMetricHook`, which implement the core's ports; `SwarmRoutingHelper`,
+which installs a protocol and its monitors in one call and collects each
+node's counters (`CollectStats`); the router observer (`IRouterObserver`),
+through which a protocol reports its control packets, route changes, data
+decisions and state size as trace sources; and `SwarmLifecycleHelper`, which
+scripts node shutdown, crash and restart the same way for every protocol. CI
+runs every org quality gate.
 
 How to work here, for people and AI agents alike: [AGENTS.md](AGENTS.md) has
 the rules and how to build and verify; the release plan is [docs/roadmap.md](docs/roadmap.md); the org conventions are in
 [CONTRIBUTING.md](https://github.com/swarm-routing/.github/blob/main/CONTRIBUTING.md).
+
+## Use core/ from another CMake project
+
+`core/` needs no ns-3: a C++20 compiler and CMake 3.20. Added by another
+project, its `CMakeLists.txt` defines the static library `swarm_core` (alias
+`swarm::core`) and nothing else: no test target, no entry in your `ctest`, and
+its strict warnings stay on its own sources, never as errors. Pin a commit:
+
+```cmake
+include(FetchContent)
+FetchContent_Declare(swarm_core
+  GIT_REPOSITORY https://github.com/swarm-routing/ns3-swarm-core.git
+  GIT_TAG <the 40-character commit you pin>
+  SOURCE_SUBDIR core)
+FetchContent_MakeAvailable(swarm_core)
+target_link_libraries(my_protocol_core PUBLIC swarm::core)   # #include "swarm-ports.h", ...
+```
+
+With a checkout on disk, `add_subdirectory(/path/to/ns3-swarm-core/core swarm-core)`
+does the same. A file added to `core/` then reaches you with the next pin, with
+no edit on your side. The pin must be a commit that has
+`core/swarm-core-sources.cmake` (any after v0.1.0's). `core/` is
+`MIT OR GPL-2.0-only` ([LICENSING.md](LICENSING.md)); a scratch project that
+does exactly this is built on every PR (`core/test/consumer/`,
+`tools/checks/check-core-consumer.sh`).
 
 <!-- org-sync:begin citing -->
 ## Releases & citing
