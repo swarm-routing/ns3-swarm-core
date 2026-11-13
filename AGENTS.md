@@ -64,7 +64,7 @@ tools/release/      dist.sh: the release asset (swarm-core-<ver>.tar.gz), checke
 .cz.toml, VERSION   Commitizen config and the version it bumps; releases run through release.yml
 .github/workflows/  ci.yml (reusable-ns3-ci: strict warnings, coverage, determinism, format, headers), core.yml (check `core`:
                     core/ alone at C++20, strict warnings, ctest, again under ASan + UBSan, the consumer check; #99), pr-title.yml,
-                    release.yml (the org reusable-release.yml, then the ns3-swarm-core-ns3 image)
+                    release.yml (the org reusable-release.yml, then the ns3-swarm-core image)
 ```
 
 ## Build & verify
