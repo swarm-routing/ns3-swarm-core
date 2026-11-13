@@ -64,6 +64,12 @@ public:
     /// re-queuing never extends its life past MaxAge.
     void Enqueue(DeferredPacket entry);
 
+    /// Puts back packets Release returned and the protocol still has no next
+    /// hop for, oldest first, each as Enqueue would (counted as enqueued, a
+    /// full queue drops its oldest), with one purge for the whole batch
+    /// (#46): draining a queue is linear, not quadratic.
+    void Requeue(std::vector<DeferredPacket> entries);
+
     /// Removes and returns every packet to `dst` (counted as released, with
     /// their hold time), oldest first. Expired packets are dropped first.
     std::vector<DeferredPacket> Release(Ipv4Address dst);
@@ -94,11 +100,18 @@ protected:
 
 private:
     void Drop(const DeferredPacket& e, DeferredDropReason reason);
+    /// Enqueue without the purge.
+    void Admit(DeferredPacket entry);
+    /// Removes and returns the entries matching `pred`, in order; the rest
+    /// keep theirs. Moves, never copies; returns at once when none match.
+    template <typename Pred> std::vector<DeferredPacket> Extract(Pred pred);
     bool Expired(const DeferredPacket& e) const;
 
     std::deque<DeferredPacket> m_queue;
     uint32_t m_maxPackets;
     Time m_maxAge;
+    /// No held packet was enqueued before this (#46): lets Purge skip the scan.
+    Time m_oldest;
     DeferredQueueStats m_stats;
     TracedCallback<Ptr<const Packet>, const Ipv4Header&, DeferredDropReason> m_dropTrace;
 };

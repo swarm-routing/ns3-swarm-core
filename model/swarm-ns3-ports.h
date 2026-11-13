@@ -16,11 +16,14 @@
 
 #include "ns3/swarm-ports.h"
 
+#include "ns3/event-id.h"
 #include "ns3/ipv4-address.h"
 #include "ns3/ptr.h"
 #include "ns3/random-variable-stream.h"
 
+#include <cstddef>
 #include <functional>
+#include <map>
 #include <memory>
 
 namespace ns3 {
@@ -57,15 +60,29 @@ private:
 /// every callback not yet run (the owner calls it from DoDispose), without
 /// keeping a list of events: each callback holds a shared token that
 /// CancelAll invalidates, so the bookkeeping is O(1) however many are pending.
+/// A cancellable timer (#46) is an ns-3 EventId kept until it runs or is
+/// cancelled, so the map holds only pending timers (org rule 7); a cancelled
+/// event is removed from the simulator's queue and never runs.
 class SwarmTimerScheduler : public swarm::core::ITimerScheduler {
 public:
     SwarmTimerScheduler();
+    ~SwarmTimerScheduler() override;
+    SwarmTimerScheduler(const SwarmTimerScheduler&) = delete;
+    SwarmTimerScheduler& operator=(const SwarmTimerScheduler&) = delete;
+
     /// Runs `callback` after `delay` seconds; a negative delay runs it now.
     void schedule(swarm::core::Time delay, std::function<void()> callback) override;
+    swarm::core::TimerHandle scheduleCancellable(swarm::core::Time delay,
+                                                 std::function<void()> callback) override;
+    void cancel(swarm::core::TimerHandle timer) override;
+    /// Cancellable timers scheduled and not yet run or cancelled.
+    std::size_t Pending() const { return m_pending.size(); }
     void CancelAll();
 
 private:
     std::shared_ptr<bool> m_alive;
+    swarm::core::TimerHandle m_next = swarm::core::kNoTimer;
+    std::map<swarm::core::TimerHandle, EventId> m_pending;
 };
 
 /// No MAC signals: an empty queue, no service-time sample.

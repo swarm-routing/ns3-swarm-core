@@ -14,7 +14,9 @@
 #include <cmath>
 #include <cstddef>
 #include <cstdint>
+#include <functional>
 #include <limits>
+#include <utility>
 #include <vector>
 
 namespace swarm::core::test {
@@ -260,6 +262,184 @@ void TestWireFuzz(Checker& c) {
         if (!canonical(in)) ++bad;
     }
     c.check(bad == 0, "every fuzzed buffer fails or round-trips to itself");
+}
+
+}  // namespace swarm::core::test
+
+namespace swarm::core::test {
+
+namespace {
+
+/// The writer as it was before #46, one push_back per byte: the reference the
+/// new writers must match byte for byte.
+class ReferenceWriter {
+public:
+    explicit ReferenceWriter(Bytes& out) : out_(out) {}
+    void u8(std::uint8_t v) { out_.push_back(v); }
+    void boolean(bool v) { u8(v ? 1 : 0); }
+    void u16(std::uint16_t v) { put(v, 2); }
+    void u32(std::uint32_t v) { put(v, 4); }
+    void u64(std::uint64_t v) { put(v, 8); }
+    void i32(std::int32_t v) { u32(static_cast<std::uint32_t>(v)); }
+    void f32(float v) { u32(std::bit_cast<std::uint32_t>(v)); }
+    void f64(double v) { u64(std::bit_cast<std::uint64_t>(v)); }
+
+private:
+    void put(std::uint64_t v, int bytes) {
+        for (int i = 0; i < bytes; ++i) {
+            out_.push_back(static_cast<std::uint8_t>((v >> (8 * i)) & 0xFFu));
+        }
+    }
+    Bytes& out_;
+};
+
+/// Writes field `kind` (0..7) with value `v` to any writer.
+template <typename W> void writeField(W& w, int kind, std::uint64_t v) {
+    switch (kind) {
+    case 0:
+        w.u8(static_cast<std::uint8_t>(v));
+        break;
+    case 1:
+        w.boolean((v & 1) != 0);
+        break;
+    case 2:
+        w.u16(static_cast<std::uint16_t>(v));
+        break;
+    case 3:
+        w.u32(static_cast<std::uint32_t>(v));
+        break;
+    case 4:
+        w.u64(v);
+        break;
+    case 5:
+        w.i32(static_cast<std::int32_t>(static_cast<std::uint32_t>(v)));
+        break;
+    case 6:
+        w.f32(std::bit_cast<float>(static_cast<std::uint32_t>(v)));
+        break;
+    default:
+        w.f64(std::bit_cast<double>(v));
+        break;
+    }
+}
+
+}  // namespace
+
+void TestWireWriterCorpus(Checker& c) {
+    // A seeded corpus of 500 frames of up to 24 random fields each: the vector
+    // writer (with and without reserve) and the fixed writer produce the
+    // reference writer's bytes, and the reader reads every field back.
+    SeededRng rng(46);
+    for (int frame = 0; frame < 500; ++frame) {
+        const int fields = static_cast<int>(rng.next() % 25);
+        std::vector<std::pair<int, std::uint64_t>> spec;
+        for (int i = 0; i < fields; ++i) {
+            spec.emplace_back(static_cast<int>(rng.next() % 8), rng.next());
+        }
+        Bytes ref;
+        ReferenceWriter rw(ref);
+        Bytes plain;
+        WireWriter pw(plain);
+        Bytes reserved{0xEE};  // bytes already there stay first
+        WireWriter qw(reserved);
+        qw.reserve(24 * 8);
+        FixedWireWriter<24 * 8> fw;
+        for (const auto& [kind, v] : spec) {
+            writeField(rw, kind, v);
+            writeField(pw, kind, v);
+            writeField(qw, kind, v);
+            writeField(fw, kind, v);
+        }
+        c.check(plain == ref, "vector writer = reference");
+        c.check(reserved.size() == ref.size() + 1 && reserved[0] == 0xEE &&
+                    Bytes(reserved.begin() + 1, reserved.end()) == ref,
+                "reserve changes no byte");
+        c.check(fw.ok() && Bytes(fw.bytes().begin(), fw.bytes().end()) == ref,
+                "fixed writer = reference");
+
+        WireReader r(ref);
+        bool same = true;
+        for (const auto& [kind, v] : spec) {
+            switch (kind) {
+            case 0:
+                same &= r.u8() == static_cast<std::uint8_t>(v);
+                break;
+            case 1:
+                same &= r.boolean() == ((v & 1) != 0);
+                break;
+            case 2:
+                same &= r.u16() == static_cast<std::uint16_t>(v);
+                break;
+            case 3:
+                same &= r.u32() == static_cast<std::uint32_t>(v);
+                break;
+            case 4:
+                same &= r.u64() == v;
+                break;
+            case 5:
+                same &= r.i32() == static_cast<std::int32_t>(static_cast<std::uint32_t>(v));
+                break;
+            case 6:
+                same &= std::bit_cast<std::uint32_t>(r.f32()) == static_cast<std::uint32_t>(v);
+                break;
+            default:
+                same &= std::bit_cast<std::uint64_t>(r.f64()) == v;
+                break;
+            }
+        }
+        c.check(same && r.atEnd(), "the reader reads every field back");
+    }
+
+    // The fixed writer fails closed: a field that does not fit is not written.
+    FixedWireWriter<5> small;
+    small.u32(0x04030201u);
+    c.check(small.ok() && small.size() == 4, "fits");
+    small.u16(7);
+    c.check(!small.ok() && small.size() == 4, "a field past the end is refused");
+    small.u8(9);
+    c.check(!small.ok() && small.size() == 4, "and the writer stays failed");
+    c.check(small.bytes()[0] == 0x01 && small.bytes()[3] == 0x04, "little-endian");
+}
+
+void TestTimerPortDefaults(Checker& c) {
+    // A scheduler that implements only schedule() (every protocol's test fake
+    // before #46) still works: scheduleCancellable schedules, cancel is a no-op.
+    struct OnlySchedule : ITimerScheduler {
+        std::vector<std::function<void()>> due;
+        void schedule(Time, std::function<void()> cb) override { due.push_back(std::move(cb)); }
+    } s;
+    int ran = 0;
+    const TimerHandle h = s.scheduleCancellable(1.0, [&] { ++ran; });
+    c.check(h == kNoTimer && s.due.size() == 1, "default scheduleCancellable schedules");
+    s.cancel(h);
+    s.cancel(42);
+    s.due.front()();
+    c.check(ran == 1, "default cancel is a no-op: the callback still runs");
+
+    // A scheduler that does cancel: the contract a core relies on.
+    struct Cancelling : ITimerScheduler {
+        std::vector<std::pair<TimerHandle, std::function<void()>>> due;
+        TimerHandle next = kNoTimer;
+        void schedule(Time d, std::function<void()> cb) override {
+            scheduleCancellable(d, std::move(cb));
+        }
+        TimerHandle scheduleCancellable(Time, std::function<void()> cb) override {
+            due.emplace_back(++next, std::move(cb));
+            return next;
+        }
+        void cancel(TimerHandle t) override {
+            std::erase_if(due, [t](const auto& e) { return e.first == t; });
+        }
+    } k;
+    int a = 0;
+    int b = 0;
+    const TimerHandle ha = k.scheduleCancellable(1.0, [&] { ++a; });
+    k.scheduleCancellable(2.0, [&] { ++b; });
+    k.cancel(ha);
+    k.cancel(ha);  // twice is harmless
+    for (auto& [t, cb] : k.due)
+        cb();
+    c.check(ha != kNoTimer && a == 0 && b == 1, "a cancelled timer does not run");
 }
 
 }  // namespace swarm::core::test

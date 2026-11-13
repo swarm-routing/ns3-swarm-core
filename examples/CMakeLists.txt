@@ -5,3 +5,8 @@ build_lib_example(
   SOURCE_FILES swarm-core-seed.cc
   LIBRARIES_TO_LINK ${libswarm-core}
 )
+build_lib_example(
+  NAME swarm-core-queue-bench
+  SOURCE_FILES swarm-core-queue-bench.cc
+  LIBRARIES_TO_LINK ${libswarm-core}
+)

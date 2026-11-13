@@ -1,9 +1,10 @@
 // Copyright (c) 2026 Daniel Joppi (https://github.com/swarm-routing)
 // SPDX-License-Identifier: MIT OR GPL-2.0-only
 //
-// Microbenchmarks of the per-packet primitives (#45, swarm-routing/.github#32):
+// Microbenchmarks of the per-packet primitives (#45, #46, swarm-routing/.github#32):
 // the pheromone table's add, entries and row, roulette next-hop selection at
-// 4, 16 and 64 neighbours, and evaporation of a 64 x 16 table. Dev-only: built
+// 4, 16 and 64 neighbours, evaporation of a 64 x 16 table, and encoding and
+// decoding a 40-byte header with the wire helpers. Dev-only: built
 // with -DSWARM_CORE_BENCH=ON, linked against Google Benchmark (Apache-2.0,
 // fetched at a pinned commit at configure time, never shipped). Run:
 //
@@ -12,11 +13,14 @@
 //   build/bench/swarm_core_bench --benchmark_repetitions=5 --benchmark_report_aggregates_only
 #include "../swarm-pheromone-table.h"
 #include "../swarm-selection.h"
+#include "../swarm-wire.h"
 #include "../test/swarm-core-check.h"
 
 #include <benchmark/benchmark.h>
 
+#include <bit>
 #include <cstddef>
+#include <cstdint>
 #include <vector>
 
 namespace {
@@ -104,6 +108,79 @@ void BM_Row(benchmark::State& state) {
     }
 }
 BENCHMARK(BM_Row);
+
+// A 40-byte header (version, two addresses, a sequence number, a time, a hop
+// count, a flag, a cost), as a protocol's control header writes it.
+template <typename W> void WriteHeader(W& w, std::uint32_t seq) {
+    w.version(1);
+    w.i32(0x0A000001);
+    w.i32(0x0A000002);
+    w.u32(seq);
+    w.f64(12.5);
+    w.u16(3);
+    w.boolean(true);
+    w.f64(0.75);
+    w.u64(0x1122334455667788ull);
+    w.u8(9);
+}
+
+// Into a fresh vector each time: what every protocol's header does today.
+void BM_WireEncode(benchmark::State& state) {
+    std::uint32_t seq = 0;
+    for (auto _ : state) {
+        std::vector<std::uint8_t> bytes;
+        swarm::core::WireWriter w(bytes);
+        WriteHeader(w, ++seq);
+        benchmark::DoNotOptimize(bytes.data());
+    }
+}
+BENCHMARK(BM_WireEncode);
+
+// BEGIN-NEW-WIRE (#46: not in the writer before it)
+void BM_WireEncodeReserved(benchmark::State& state) {
+    std::uint32_t seq = 0;
+    for (auto _ : state) {
+        std::vector<std::uint8_t> bytes;
+        swarm::core::WireWriter w(bytes);
+        w.reserve(40);
+        WriteHeader(w, ++seq);
+        benchmark::DoNotOptimize(bytes.data());
+    }
+}
+BENCHMARK(BM_WireEncodeReserved);
+
+void BM_WireEncodeFixed(benchmark::State& state) {
+    std::uint32_t seq = 0;
+    for (auto _ : state) {
+        swarm::core::FixedWireWriter<40> w;
+        WriteHeader(w, ++seq);
+        benchmark::DoNotOptimize(w.bytes().data());
+        benchmark::ClobberMemory();
+    }
+}
+BENCHMARK(BM_WireEncodeFixed);
+// END-NEW-WIRE
+
+void BM_WireDecode(benchmark::State& state) {
+    std::vector<std::uint8_t> bytes;
+    swarm::core::WireWriter w(bytes);
+    WriteHeader(w, 7);
+    for (auto _ : state) {
+        swarm::core::WireReader r(bytes);
+        r.expectVersion(1);
+        std::uint64_t acc =
+            static_cast<std::uint32_t>(r.i32()) + static_cast<std::uint32_t>(r.i32());
+        acc += r.u32();
+        acc += std::bit_cast<std::uint64_t>(r.f64());
+        acc += r.u16();
+        acc += r.boolean() ? 1 : 0;
+        acc += std::bit_cast<std::uint64_t>(r.f64());
+        acc += r.u64() + r.u8();
+        benchmark::DoNotOptimize(acc);
+        benchmark::DoNotOptimize(r.atEnd());
+    }
+}
+BENCHMARK(BM_WireDecode);
 
 }  // namespace
 

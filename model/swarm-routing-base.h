@@ -146,6 +146,9 @@ public:
 protected:
     void DoInitialize() override;
     void DoDispose() override;
+    /// Marks the cached ports stale, so a monitor aggregated to the node
+    /// later is still seen (#46). An adapter overriding it chains up.
+    void NotifyNewAggregate() override;
 
     // --- hooks: the protocol's adapter -----------------------------------------
 
@@ -263,6 +266,9 @@ protected:
     const swarm::core::IClock& Clock() const { return m_clock; }
     SwarmRng& Rng() { return m_rng; }
     swarm::core::ITimerScheduler& Timers() { return m_timers; }
+    /// The ports below are looked up once and cached (#46); the cache is
+    /// refreshed when the stack is set, at DoInitialize, when an interface
+    /// comes up and when an object is aggregated to the node.
     /// The node's WifiLinkMonitor, else its IslLinkMonitor, else a null port.
     const swarm::core::ILinkState& LinkState() const;
     /// The node's WifiLinkMonitor, else a null port.
@@ -276,6 +282,10 @@ private:
     Ptr<Node> NodeOf() const;
     Ptr<Ipv4Route> LoopbackRoute(const Ipv4Header& header, Ptr<NetDevice> oif) const;
     Ptr<Ipv4Route> DirectRoute(Ipv4Address dst, Ipv4Address next, Ipv4Address src) const;
+    /// The same, through interface `ifIdx` (InterfaceTowards(next)).
+    Ptr<Ipv4Route> DirectRoute(Ipv4Address dst, Ipv4Address next, Ipv4Address src,
+                               int32_t ifIdx) const;
+    void RefreshPorts() const;
     int32_t InterfaceTowards(Ipv4Address next) const;
     void PurgeTick();
     void RecvSocket(Ptr<Socket> socket);
@@ -306,7 +316,14 @@ private:
     /// Sockets in creation (interface) order: a map keyed by Ptr<Socket> would
     /// order them by heap address, and MainAddress(), the route fallbacks and
     /// the broadcast order would then vary between runs (org rule 5).
-    using SocketList = std::vector<std::pair<Ptr<Socket>, Ipv4InterfaceAddress>>;
+    /// A control socket, its interface address and that interface's index
+    /// (kept, so no per-packet lookup is needed, #46).
+    struct BoundSocket {
+        Ptr<Socket> socket;
+        Ipv4InterfaceAddress iface;
+        int32_t ifIndex;
+    };
+    using SocketList = std::vector<BoundSocket>;
     SocketList m_sockets;
     SocketList m_bcastSockets;
     Ptr<DeferredPacketQueue> m_queue;
@@ -327,6 +344,13 @@ private:
     /// Ipv4L3Protocol's forwarding callback, the same for every packet: kept
     /// from RouteInput so ResendData can send outside it.
     UnicastForwardCallback m_ucb;
+    /// The cached ports (raw: they live in the node's aggregate, which holds
+    /// this protocol too; dropped at dispose).
+    mutable bool m_portsStale = true;
+    mutable const swarm::core::ILinkState* m_linkStatePort = nullptr;
+    mutable const swarm::core::ILinkQuality* m_linkQualityPort = nullptr;
+    mutable const swarm::core::INeighborProvider* m_neighborsPort = nullptr;
+    mutable const swarm::core::IEnergy* m_energyPort = nullptr;
 };
 
 }  // namespace ns3

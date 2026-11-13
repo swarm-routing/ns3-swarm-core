@@ -59,9 +59,37 @@ void SwarmTimerScheduler::schedule(swarm::core::Time delay, std::function<void()
     });
 }
 
+SwarmTimerScheduler::~SwarmTimerScheduler() {
+    *m_alive = false;  // a pending callback must not reach a destroyed scheduler
+}
+
+swarm::core::TimerHandle SwarmTimerScheduler::scheduleCancellable(swarm::core::Time delay,
+                                                                  std::function<void()> callback) {
+    const Time d = delay > 0.0 ? Seconds(delay) : Time(0);
+    const swarm::core::TimerHandle handle = ++m_next;
+    m_pending[handle] =
+        Simulator::Schedule(d, [this, alive = m_alive, handle, cb = std::move(callback)]() {
+            if (*alive) {
+                m_pending.erase(handle);
+                cb();
+            }
+        });
+    return handle;
+}
+
+void SwarmTimerScheduler::cancel(swarm::core::TimerHandle timer) {
+    const auto it = m_pending.find(timer);
+    if (it == m_pending.end()) {
+        return;
+    }
+    Simulator::Cancel(it->second);
+    m_pending.erase(it);
+}
+
 void SwarmTimerScheduler::CancelAll() {
     *m_alive = false;
     m_alive = std::make_shared<bool>(true);
+    m_pending.clear();
 }
 
 double NullLinkQuality::sinrDbFrom(swarm::core::NodeAddress) const {
