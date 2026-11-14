@@ -104,7 +104,14 @@ TypeId WifiLinkMonitor::GetTypeId() {
                             "The IPv4 datagram of a unicast data frame the MAC gave up on "
                             "at its retry limit (IP header on), and the neighbour IP.",
                             MakeTraceSourceAccessor(&WifiLinkMonitor::m_undeliveredTrace),
-                            "ns3::WifiLinkMonitor::UndeliveredCallback");
+                            "ns3::WifiLinkMonitor::UndeliveredCallback")
+            .AddTraceSource("TxFailure",
+                            "One per retry-limit drop of a unicast frame, after LinkFailure "
+                            "and Undelivered: the neighbour IP (0.0.0.0 if unknown), its "
+                            "MAC, and the IPv4 datagram Undelivered carried, or null "
+                            "(#128).",
+                            MakeTraceSourceAccessor(&WifiLinkMonitor::m_txFailureTrace),
+                            "ns3::WifiLinkMonitor::TxFailureCallback");
     return tid;
 }
 
@@ -193,20 +200,25 @@ void WifiLinkMonitor::NotifyDropped(WifiMacDropReason reason, Ptr<const WifiMpdu
         return;
     }
     ++m_failures;
-    m_linkFailureTrace(IpOf(to), to);
+    const Ipv4Address neighbor = IpOf(to);
+    m_linkFailureTrace(neighbor, to);
     // The datagram itself, so a protocol can send it another way (#40): the
     // MSDU of a data frame is LLC/SNAP + the IPv4 datagram.
     const WifiMacHeader& mac = mpdu->GetHeader();
     LlcSnapHeader llc;
+    Ptr<Packet> datagram;
     // A MAC fragment holds part of the datagram only: not reported.
     if (mac.IsData() && !mpdu->IsFragment() && !(mac.IsQosData() && mac.IsQosAmsdu()) &&
         mpdu->GetPacket()->GetSize() > llc.GetSerializedSize()) {
-        Ptr<Packet> datagram = mpdu->GetPacket()->Copy();
-        datagram->RemoveHeader(llc);
+        Ptr<Packet> body = mpdu->GetPacket()->Copy();
+        body->RemoveHeader(llc);
         if (llc.GetType() == 0x0800) {  // IPv4's EtherType (PROT_NUMBER is deprecated in 3.49)
-            m_undeliveredTrace(datagram, IpOf(to));
+            datagram = body;
+            m_undeliveredTrace(datagram, neighbor);
         }
     }
+    // The same drop once more, as one event (#128).
+    m_txFailureTrace(neighbor, to, datagram);
 }
 
 WifiLinkMonitor::Neighbor& WifiLinkMonitor::Heard(Mac48Address mac) {

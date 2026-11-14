@@ -106,6 +106,12 @@ public:
     /// A relay that holds every transit packet through Defer with a mark on
     /// it, as an adapter overriding RouteInput would (#40).
     bool holdMarked = false;
+    /// OnTxFailure (#128): one line per call ("tx data <dst>", "tx control",
+    /// "tx other"), then the base's default unless `txOnly`; the default's
+    /// OnLinkFailure and OnDataUndelivered add "link" and "undelivered".
+    std::vector<std::string> txLog;
+    bool txOnly = false;
+    std::vector<Mac48Address> txMacs;
     std::vector<bool> markedFrom;  ///< per data packet seen: did it carry the mark?
     /// OnDataUndelivered (#40): (failed next hop, previous hop) per report; with
     /// `backtrack`, the packet goes back to the previous hop (ARA §3.3).
@@ -227,7 +233,24 @@ protected:
         return SwarmRoutingBase::RouteInput(p, header, idev, ucb, mcb, lcb, ecb);
     }
 
-    void OnLinkFailure(Ipv4Address neighbor) override { failures.push_back(neighbor); }
+    void OnLinkFailure(Ipv4Address neighbor) override {
+        failures.push_back(neighbor);
+        txLog.emplace_back("link");
+    }
+
+    void OnTxFailure(Ipv4Address neighbor, Mac48Address mac, Ptr<const Packet> p,
+                     const Ipv4Header* header, bool control) override {
+        std::ostringstream os;
+        os << "tx " << (p ? "data" : control ? "control" : "other");
+        if (header) {
+            os << " " << header->GetDestination();
+        }
+        txLog.push_back(os.str());
+        txMacs.push_back(mac);
+        if (!txOnly) {
+            SwarmRoutingBase::OnTxFailure(neighbor, mac, p, header, control);
+        }
+    }
 
     // A graceful shutdown announces it is leaving; a crash tries to as well,
     // and the base must let nothing out. Both forget the routes; a restart
@@ -257,6 +280,7 @@ protected:
     void OnDataUndelivered(Ptr<const Packet> p, const Ipv4Header& header, Ipv4Address failedNext,
                            Ipv4Address prev) override {
         undelivered.emplace_back(failedNext, prev);
+        txLog.emplace_back("undelivered");
         if (backtrack && prev != Ipv4Address()) {
             resent.push_back(ResendData(p, header, prev));
         }
@@ -1695,6 +1719,72 @@ private:
     }
 };
 
+/// OnTxFailure (#128): one call per retry-limit drop, for a data frame with
+/// its datagram and for a control frame without; the default keeps the
+/// OnLinkFailure + OnDataUndelivered sequence, an override replaces it.
+class TxFailureTestCase : public TestCase {
+public:
+    explicit TxFailureTestCase(bool txOnly)
+        : TestCase(std::string("glue: one OnTxFailure per retry-limit drop, data or control") +
+                   (txOnly ? ", overridden" : ", default")),
+          m_txOnly(txOnly) {}
+
+private:
+    bool m_txOnly;
+
+    void DoRun() override {
+        SwarmCoreSeed(1);
+        NodeContainer nodes;
+        nodes.Create(3);
+        NetDeviceContainer devs = AdhocWifi(nodes, 50.0);
+        SwarmRoutingHelper("ns3::swarmtest::ToyProtocol").Install(nodes);
+        Ipv4AddressHelper a;
+        a.SetBase("10.1.1.0", "255.255.255.0");
+        a.Assign(devs);
+        WifiHelper::AssignStreams(devs, 10);
+        Ptr<Node> n0 = nodes.Get(0);
+        Ptr<Node> n1 = nodes.Get(1);
+        Ptr<Node> n2 = nodes.Get(2);
+        const Ipv4Address n1a = Addr(n1, 1);
+        const Ipv4Address n2a = Addr(n2, 1);
+        Toy(n0)->routes[n2a] = n1a;
+        Toy(n1)->routes[n2a] = n2a;
+        Toy(n1)->txOnly = m_txOnly;
+
+        std::vector<std::string> rx;
+        Ptr<Socket> sink = Sink(n2, &rx);
+        Ptr<Socket> src = Source(n0);
+        Simulator::Schedule(Seconds(0.5), [&]() { SendUdp(src, n2a, 100); });  // ARP warm-up
+        Simulator::Schedule(Seconds(2.0), [&]() {
+            n2->GetObject<MobilityModel>()->SetPosition(Vector(5000.0, 0.0, 0.0));
+        });
+        Simulator::Schedule(Seconds(2.1), [&]() { SendUdp(src, n2a, 100); });            // data
+        Simulator::Schedule(Seconds(3.0), [&]() { Toy(n1)->UnicastMessage(n2a, 20); });  // control
+        Simulator::Stop(Seconds(4));
+        Simulator::Run();
+
+        const Mac48Address n2mac = Mac48Address::ConvertFrom(n2->GetDevice(0)->GetAddress());
+        const std::vector<std::string> expected =
+            m_txOnly ? std::vector<std::string>{"tx data 10.1.1.3", "tx control"}
+                     : std::vector<std::string>{"tx data 10.1.1.3", "link", "undelivered",
+                                                "tx control", "link"};
+        std::string got;
+        for (const auto& l : Toy(n1)->txLog) {
+            got += l + "; ";
+        }
+        NS_TEST_EXPECT_MSG_EQ((Toy(n1)->txLog == expected), true, "hook sequence: " + got);
+        NS_TEST_ASSERT_MSG_EQ(Toy(n1)->txMacs.size(), 2u, "one call per lost frame");
+        NS_TEST_EXPECT_MSG_EQ(Toy(n1)->txMacs[0], n2mac, "the receiver's MAC (data)");
+        NS_TEST_EXPECT_MSG_EQ(Toy(n1)->txMacs[1], n2mac, "the receiver's MAC (control)");
+        NS_TEST_EXPECT_MSG_EQ(Toy(n1)->failures.size(), m_txOnly ? 0u : 2u,
+                              "OnLinkFailure only from the default");
+        NS_TEST_EXPECT_MSG_EQ(Toy(n1)->undelivered.size(), m_txOnly ? 0u : 1u,
+                              "OnDataUndelivered only from the default, data only");
+        NS_TEST_EXPECT_MSG_EQ(Toy(n0)->txLog.empty(), true, "n0's frames all arrived");
+        Simulator::Destroy();
+    }
+};
+
 // --- EnergyMetricHook
 // ----------------------------------------------------------------
 
@@ -1890,6 +1980,8 @@ std::vector<TestCase*> MakeGlueTestCases() {
             new UndeliveredTestCase(UndeliveredTestCase::Variant::Plain),
             new UndeliveredTestCase(UndeliveredTestCase::Variant::Checksums),
             new UndeliveredTestCase(UndeliveredTestCase::Variant::MacFragments),
+            new TxFailureTestCase(false),
+            new TxFailureTestCase(true),
             new EnergyHookTestCase,
             new ObserverTestCase,
             new LifecycleTestCase,

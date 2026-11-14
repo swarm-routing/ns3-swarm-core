@@ -155,10 +155,8 @@ void SwarmRoutingBase::DoInitialize() {
     m_purgeTimer.Schedule(m_purgeInterval);
     if (Ptr<Node> node = NodeOf()) {
         if (Ptr<WifiLinkMonitor> wifi = node->GetObject<WifiLinkMonitor>()) {
-            wifi->TraceConnectWithoutContext("LinkFailure",
-                                             MakeCallback(&SwarmRoutingBase::WifiLinkFailed, this));
-            wifi->TraceConnectWithoutContext(
-                "Undelivered", MakeCallback(&SwarmRoutingBase::WifiUndelivered, this));
+            wifi->TraceConnectWithoutContext("TxFailure",
+                                             MakeCallback(&SwarmRoutingBase::WifiTxFailure, this));
         }
     }
     m_initialized = true;
@@ -786,37 +784,48 @@ void SwarmRoutingBase::RecvSocket(Ptr<Socket> socket) {
 
 // --- link failures -----------------------------------------------------------------
 
-void SwarmRoutingBase::WifiLinkFailed(Ipv4Address neighbor, Mac48Address) {
-    if (neighbor != Ipv4Address() && !IsDown()) {
-        OnLinkFailure(neighbor);
-    }
-}
-
-void SwarmRoutingBase::WifiUndelivered(Ptr<const Packet> datagram, Ipv4Address neighbor) {
+void SwarmRoutingBase::WifiTxFailure(Ipv4Address neighbor, Mac48Address mac,
+                                     Ptr<const Packet> datagram) {
     if (IsDown()) {
         return;
     }
-    Ptr<Packet> p = datagram->Copy();
+    Ptr<Packet> p;
     Ipv4Header header;
-    p->RemoveHeader(header);
-    if (Node::ChecksumEnabled()) {
-        header.EnableChecksum();  // Deserialize does not restore it: a resend needs it
-    }
-    if (header.GetDestination().IsBroadcast() || header.GetDestination().IsMulticast()) {
-        return;
-    }
-    // Only a first fragment starts with the UDP header.
-    if (header.GetProtocol() == kUdpProtocol && header.GetFragmentOffset() == 0 &&
-        p->GetSize() >= UdpHeader().GetSerializedSize()) {
-        UdpHeader udp;
-        if (p->PeekHeader(udp) && udp.GetDestinationPort() == ControlPort()) {
-            return;  // control is one hop; its loss is the protocol's own business
+    bool control = false;
+    if (datagram) {
+        p = datagram->Copy();
+        p->RemoveHeader(header);
+        if (Node::ChecksumEnabled()) {
+            header.EnableChecksum();  // Deserialize does not restore it: a resend needs it
+        }
+        // Only a first fragment starts with the UDP header.
+        if (header.GetProtocol() == kUdpProtocol && header.GetFragmentOffset() == 0 &&
+            p->GetSize() >= UdpHeader().GetSerializedSize()) {
+            UdpHeader udp;
+            if (p->PeekHeader(udp) && udp.GetDestinationPort() == ControlPort()) {
+                control = true;  // control is one hop; its loss is the protocol's own business
+            }
+        }
+        if (control || header.GetDestination().IsBroadcast() ||
+            header.GetDestination().IsMulticast()) {
+            p = nullptr;
         }
     }
-    SwarmPrevHopTag tag;
-    const Ipv4Address prev =
-        p->PeekPacketTag(tag) && IsMyAddress(tag.Get()) ? tag.GetFrom() : Ipv4Address();
-    OnDataUndelivered(p, header, neighbor, prev);
+    OnTxFailure(neighbor, mac, p, p ? &header : nullptr, control);
+}
+
+void SwarmRoutingBase::OnTxFailure(Ipv4Address neighbor, Mac48Address /*mac*/, Ptr<const Packet> p,
+                                   const Ipv4Header* header, bool /*control*/) {
+    // The order the two hooks always had: the link first, then the data.
+    if (neighbor != Ipv4Address()) {
+        OnLinkFailure(neighbor);
+    }
+    if (p && header) {
+        SwarmPrevHopTag tag;
+        const Ipv4Address prev =
+            p->PeekPacketTag(tag) && IsMyAddress(tag.Get()) ? tag.GetFrom() : Ipv4Address();
+        OnDataUndelivered(p, *header, neighbor, prev);
+    }
 }
 
 void SwarmRoutingBase::IslLinkChanged(Ipv4Address peer, bool up) {
