@@ -10,7 +10,7 @@ before changing anything. Org-wide conventions:
 **Status: primitives in `core/` (#8), ns-3 glue in `model/` and `helper/` (#9), node lifecycle (#43).** CI runs every org quality gate on the module. API version 2 (`kSwarmCoreApiVersion`).
 
 The shared ns-3 contrib module `swarm-core` (`libns3.<ver>-swarm-core`) every
-swarm-routing protocol links against: simulator-agnostic C++20 primitives
+swarm-routing protocol links against: simulator-agnostic C++23 primitives
 (`VisitedPath`, little-endian wire helpers, `PheromoneTable`, `RouteDecision`,
 `ILinkState`, `ILinkMetric`, evaporation and roulette selection) extracted from
 AntHocNet's dual-licensed `core/`, plus ns-3 cross-layer glue
@@ -74,11 +74,13 @@ examples/           swarm-core-seed: the determinism gate's program (seeded draw
                     swarm-core-queue-bench: dev-only drain cost of the deferred queue (#46), not run by CI
 tools/checks/       check-core-consumer.sh: core/ in another CMake project gets the library alone (no test target, no ctest
                     entry, no -Werror of ours), installs as the package find_package finds (its version rule
-                    included), and its dist.sh tarball builds by URL + URL_HASH; run by the `core` check — MIT OR GPL-2.0-only
+                    included), and its dist.sh tarball builds by URL + URL_HASH; run by the `core` check;
+                    check-cxx-standard.py: core/'s C++ standard against an ns-3 tree's minimum (#141) — MIT OR GPL-2.0-only
 tools/release/      dist.sh: the release asset (swarm-core-<ver>.tar.gz), checked in a clean ns3-dev tree; `make dist` — MIT OR GPL-2.0-only
 .cz.toml, VERSION   Commitizen config and the version it bumps; releases run through release.yml
-.github/workflows/  ci.yml (reusable-ns3-ci: strict warnings, coverage, determinism, format, headers), core.yml (check `core`:
-                    core/ alone at C++20, strict warnings, ctest, again under ASan + UBSan, the consumer check; #99), pr-title.yml,
+.github/workflows/  ci.yml (reusable-ns3-ci: strict warnings, coverage, determinism, format, headers; `cxx-standard`:
+                    tools/checks/check-cxx-standard.py, core/'s standard against the image's ns-3 minimum, #141), core.yml (check `core`:
+                    core/ alone at C++23, strict warnings, ctest, again under ASan + UBSan, the consumer check; #99), pr-title.yml,
                     release.yml (the org reusable-release.yml, then the ns3-swarm-core image)
 ```
 
@@ -98,7 +100,7 @@ docker run --rm -v "$PWD:/src/swarm-core:ro" ghcr.io/swarm-routing/ns3-dev:lates
     ns3-build-contrib --strict-warnings --test swarm-core=/src/swarm-core
 ```
 
-`core/` alone, with no ns-3 tree, at C++20 as every protocol repository builds
+`core/` alone, with no ns-3 tree, at C++23 as every protocol repository builds
 it (plain CMake; the same strict warnings as CI, `-DSWARM_CORE_SANITIZE=ON` for
 ASan + UBSan as the sanitized leg). The `core` check (`.github/workflows/core.yml`)
 runs these on every PR:
@@ -130,8 +132,18 @@ has the determinism gate: `swarm-core-seed --seed=1` twice
 must be byte-identical and `--seed=2` must differ (org invariant 5). Format:
 `git ls-files '*.h' '*.cc' | xargs clang-format-18 --dry-run -Werror` with the org
 `.clang-format`. The suite
-needs ns-3.42+ (scoped `TestCase::Duration`), and `core/` needs a tree that
-builds at C++20 or later (`std::span`, `std::bit_cast`; ns-3.49 builds at C++23).
+needs ns-3.42+ (scoped `TestCase::Duration`). **`core/` targets the C++
+standard of the ns-3 release swarm-core supports**, ns-3's own
+`CMAKE_CXX_STANDARD_MINIMUM` (`build-support/macros-and-definitions.cmake`:
+C++17 for 3.40, C++20 for 3.41–3.45, C++23 from 3.46), so C++23 today:
+`CMAKE_CXX_STANDARD 23` and `cxx_std_23` on `swarm_core` in
+`core/CMakeLists.txt`, which every consumer of `swarm::core` inherits. A
+consumer needs a compiler for it; when ns-3 raises its minimum, `core/`
+follows in a minor release, with an issue in each consumer
+(`docs/api-policy.md` "C++ standard", #141). The `cxx-standard` job of
+`ci.yml` fails when `core/` is below the `ns3-dev` image's minimum
+(`python3 -I tools/checks/check-cxx-standard.py --self-test`; in the image:
+`python3 -I tools/checks/check-cxx-standard.py --ns3 /opt/ns-3`).
 Licence headers and the include rule: `python3 -I ../.github/tools/checks/check-headers.py --dual core/ --dual tools/ --core core/ .`.
 
 Releases (epic #6; `swarm-routing/.github` CONTRIBUTING "Cutting a release"):

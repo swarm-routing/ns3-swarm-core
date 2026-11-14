@@ -7,6 +7,8 @@ citation = true
 zenodo_concept = "24138628"
 title = "ns3-swarm-core"
 module = "swarm-core"
+# the C++ badge: core/'s standard, the one of the ns-3 release swarm-core supports (#141)
+cxx = "23"
 dual = ["core/", "tools/"]
 trust_boundary = """
 The bounds-checked little-endian readers in `core/` (org invariant 3):
@@ -61,9 +63,9 @@ test = 'docker run --rm -v "$(CURDIR):/src/swarm-core:ro" $(NS3_IMAGE) ns3-build
 
 [settings]
 # GitHub settings as code: swarm-routing/.github tools/repo-settings (swarm-routing/.github#117).
-description = "swarm-core, the shared ns-3 contrib module every swarm-routing protocol links against: simulator-agnostic C++20 primitives (visited path, little-endian wire helpers, pheromone table, route decision, link metrics) and the ns-3 glue they need."
+description = "swarm-core, the shared ns-3 contrib module every swarm-routing protocol links against: simulator-agnostic C++23 primitives (visited path, little-endian wire helpers, pheromone table, route decision, link metrics) and the ns-3 glue they need."
 homepage = "https://swarm-routing.github.io/projects/ns3-swarm-core/"
-topics = ["ns-3", "swarm-intelligence", "routing-protocol", "manet", "cpp20", "pheromone", "network-simulation", "library"]
+topics = ["ns-3", "swarm-intelligence", "routing-protocol", "manet", "cpp23", "pheromone", "network-simulation", "library"]
 ruleset = "protocol"
 required_checks = ["ci / ns-latest debug", "ci / ns-latest sanitized", "ci / format", "ci / headers / licence", "core", "check / org-sync", "title / title", "review / coderabbit"]
 # Merge through a merge queue (swarm-routing/.github#130); every workflow behind a required

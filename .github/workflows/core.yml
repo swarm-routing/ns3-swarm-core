@@ -2,10 +2,10 @@
 # SPDX-License-Identifier: GPL-2.0-only
 name: Core
 
-# core/ on its own (plain CMake + ctest, no ns-3 tree, C++20): the build every
+# core/ on its own (plain CMake + ctest, no ns-3 tree, C++23): the build every
 # protocol repository pins (#99). ci.yml compiles the same sources inside
-# ns-3, at the standard ns-3 builds at (C++23 on ns-3.49), so only this check
-# sees what a consumer's C++20 build sees: the strict warnings as errors (in
+# ns-3, at the standard ns-3 builds at (C++23 on ns-3.49; core/ follows it,
+# #141), so only this check sees what a consumer's own build sees: the strict warnings as errors (in
 # core/CMakeLists.txt), the tests, the same under ASan + UBSan, and core/ used
 # as a library by another CMake project (#100), as an installed package and as
 # the release tarball by URL (#133). Formatting and licence headers

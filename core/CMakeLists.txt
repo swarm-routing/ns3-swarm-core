@@ -34,7 +34,11 @@ else()
 endif()
 project(swarm_core VERSION ${_swarm_core_version} LANGUAGES CXX)
 
-set(CMAKE_CXX_STANDARD 20)
+# The C++ standard of the ns-3 release swarm-core supports: ns-3's
+# CMAKE_CXX_STANDARD_MINIMUM (C++23 from ns-3.46; docs/api-policy.md "C++
+# standard"). tools/checks/check-cxx-standard.py fails CI when this and the
+# cxx_std_ feature below fall behind the ns3-dev image's minimum.
+set(CMAKE_CXX_STANDARD 23)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 set(CMAKE_CXX_EXTENSIONS OFF)
 
@@ -73,8 +77,9 @@ include(GNUInstallDirs)
 target_include_directories(swarm_core PUBLIC
   $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}>
   $<INSTALL_INTERFACE:${CMAKE_INSTALL_INCLUDEDIR}/swarm-core>)
-# A consumer's targets that link this one compile at C++20 or later.
-target_compile_features(swarm_core PUBLIC cxx_std_20)
+# A consumer's targets that link this one compile at C++23 or later, in a
+# subproject and through the installed package alike.
+target_compile_features(swarm_core PUBLIC cxx_std_23)
 if(SWARM_CORE_SANITIZE)
   # The objects are instrumented, so whatever links them needs the sanitizer
   # runtime: add_link_options above reaches this directory's targets only, not

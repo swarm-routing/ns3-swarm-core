@@ -47,7 +47,8 @@ cat > "$pkg/INSTALL.txt" <<TXT
 swarm-core $ver (swarm-routing/ns3-swarm-core): the shared ns-3 contrib
 module every swarm-routing protocol links against. core/ is MIT OR
 GPL-2.0-only (core/LICENSE); the rest is GPL-2.0-only (LICENSING.md).
-Needs ns-3.42 or later, built at C++20 or later.
+Needs ns-3.42 or later; core/ targets C++23, the standard of the ns-3
+release swarm-core supports (ns-3.46 and later).
 
   tar -xzf swarm-core-$ver.tar.gz -C /path/to/ns-3/contrib
   cd /path/to/ns-3

@@ -9,6 +9,9 @@
 #
 #   - no swarm_core_tests target, and no `swarm-core` entry in its ctest;
 #   - no -Werror on its own sources, nor on swarm-core's inside its build;
+#   - its own sources compile at core/'s C++ standard (CMAKE_CXX_STANDARD in
+#     core/CMakeLists.txt), which swarm::core carries as a compile feature
+#     (#141), though the consumer sets no standard of its own;
 #   - its own test (the consumer program, linked against the library) passes.
 #
 # Then the same consumer with -DSWARM_CORE_SANITIZE=ON (in BUILD-DIR/sanitized):
@@ -22,13 +25,13 @@
 #     lib/cmake/swarm-core/; `find_package(swarm-core <VERSION> CONFIG REQUIRED)`
 #     finds it and the consumer links the imported swarm::core and passes; its
 #     own major.minor is accepted, another major (and, before 1.0, another
-#     minor) refused;
+#     minor) refused; the exported target carries core/'s cxx_std_ feature;
 #   - fetched as the release asset: the tarball tools/release/dist.sh builds
 #     (DIST_CHECK=0), through FetchContent URL + URL_HASH SHA256 with
 #     SOURCE_SUBDIR core, the way a consumer's release lock uses it.
 #
 # CI runs it in the `core` check (.github/workflows/core.yml). Needs cmake, a
-# C++20 compiler and python3; no ns-3.
+# C++23 compiler and python3; no ns-3.
 set -euo pipefail
 repo=$(cd "$(dirname "$0")/../.." && pwd)
 build=${1:-}
@@ -38,6 +41,8 @@ if [ -z "$build" ]; then
 fi
 build=$(mkdir -p "$build" && cd "$build" && pwd)  # absolute: a prefix and a file:// URL below
 fail() { echo "check-core-consumer: FAIL: $*" >&2; exit 1; }
+std=$(sed -nE 's/^set\(CMAKE_CXX_STANDARD ([0-9]+)\)$/\1/p' "$repo/core/CMakeLists.txt")
+[ -n "$std" ] || fail "no set(CMAKE_CXX_STANDARD N) in core/CMakeLists.txt"
 
 cmake -S "$repo/core/test/consumer" -B "$build" -DCMAKE_EXPORT_COMPILE_COMMANDS=ON >/dev/null
 cmake --build "$build" -j "$(nproc)" >/dev/null
@@ -52,8 +57,9 @@ listed=$(ctest --test-dir "$build" -N)
 grep -Eq '^ *Test +#[0-9]+: swarm-core$' <<<"$listed" && fail "the consumer's ctest lists swarm-core's suite"
 grep -q 'Total Tests: 1$' <<<"$listed" || fail "the consumer's ctest should list its one test: $listed"
 
-python3 -I - "$build/compile_commands.json" <<'PY' || fail "a compile command carries -Werror"
+python3 -I - "$build/compile_commands.json" "$std" <<'PY' || fail "a compile command carries -Werror, or the consumer's misses C++$std"
 import json
+import re
 import sys
 
 commands = json.load(open(sys.argv[1]))
@@ -62,6 +68,12 @@ assert "consumer.cc" in files and "swarm-selection.cc" in files, files
 bad = [c["file"] for c in commands if "-Werror" in c["command"].split()]
 for name in bad:
     print(f"-Werror on {name}", file=sys.stderr)
+# The consumer sets no standard: swarm::core's compile feature must raise it.
+std = re.compile(r"^-std=(c|gnu)\+\+" + sys.argv[2] + "$")
+for c in commands:
+    if c["file"].endswith("/consumer.cc") and not any(std.match(a) for a in c["command"].split()):
+        print(f"consumer.cc does not compile at C++{sys.argv[2]}: {c['command']}", file=sys.stderr)
+        bad.append(c["file"])
 sys.exit(1 if bad else 0)
 PY
 
@@ -85,6 +97,8 @@ for f in include/swarm-core/swarm-ports.h include/swarm-core/testbench/swarm-tes
     [ -f "$build/prefix/$f" ] || fail "the install has no $f"
 done
 [ -f "$build/prefix/lib/libswarm_core.a" ] || fail "the install has no lib/libswarm_core.a"
+grep -q "INTERFACE_COMPILE_FEATURES \"cxx_std_$std\"" "$build/prefix/lib/cmake/swarm-core/swarm-coreTargets.cmake" ||
+    fail "the installed swarm::core does not carry cxx_std_$std"
 
 pkg=$repo/core/test/consumer-package
 cmake -S "$pkg" -B "$build/package" -DCMAKE_PREFIX_PATH="$build/prefix" -DSWARM_CORE_WANT="$ver" >/dev/null ||

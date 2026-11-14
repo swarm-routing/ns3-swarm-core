@@ -51,6 +51,25 @@ jobs:
     secrets:
       SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
 
+  # core/ keeps up with the C++ standard of the ns-3 release swarm-core
+  # supports (docs/api-policy.md "C++ standard", #141): core/CMakeLists.txt's
+  # CMAKE_CXX_STANDARD and the cxx_std_ feature a consumer inherits against
+  # the CMAKE_CXX_STANDARD_MINIMUM of the image the `ci` job builds in. Fails
+  # when ns-3 raises its minimum and core/ has not followed.
+  cxx-standard:
+    if: inputs.ns3-versions == ''
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    container: ghcr.io/swarm-routing/ns3-dev:latest-debug
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: Self-test
+        run: python3 -I tools/checks/check-cxx-standard.py --self-test
+      - name: core/ against the image's ns-3
+        run: python3 -I tools/checks/check-cxx-standard.py --ns3 /opt/ns-3 core/CMakeLists.txt
+
   # The coverage report of the `ci` job to Codecov (report-only; GitHub OIDC,
   # no Codecov token).
   codecov:
