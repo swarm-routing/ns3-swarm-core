@@ -522,11 +522,18 @@ bool SwarmRoutingBase::ResendData(Ptr<const Packet> p, const Ipv4Header& header,
 
 void SwarmRoutingBase::Defer(Ptr<const Packet> p, const Ipv4Header& header,
                              const UnicastForwardCallback& ucb, const ErrorCallback& ecb) {
+    Defer(p, header, ucb, ecb, HoldClassFor(header.GetDestination()));
+}
+
+void SwarmRoutingBase::Defer(Ptr<const Packet> p, const Ipv4Header& header,
+                             const UnicastForwardCallback& ucb, const ErrorCallback& ecb,
+                             uint8_t holdClass) {
     DeferredPacket e;
     e.packet = p;
     e.header = header;
     e.ucb = ucb;
     e.ecb = ecb;
+    e.holdClass = holdClass;
     m_queue->Enqueue(e);
     if (IsDown()) {
         m_queue->Flush();  // an adapter deferring while down: lost as NodeDown
@@ -599,6 +606,9 @@ void SwarmRoutingBase::ReleaseDeferred(Ipv4Address dst) {
         if (next == Ipv4Address()) {
             back.push_back(std::move(e));  // keeps its first enqueue time
             continue;
+        }
+        if (!e.ucb.IsNull() && InterfaceTowards(next) >= 0) {
+            m_queue->NoteForwarded(e);  // only what ForwardData will send
         }
         OnDataForwarded(e.packet, e.header, next);
         ForwardData(e.packet, e.header, next, e.ucb);

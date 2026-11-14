@@ -50,7 +50,8 @@ model/              ns-3 glue — GPL-2.0-only; each file derived from AntHocNet
                     swarm-core.h (kSwarmCoreApiVersion, SwarmCoreSeed), swarm-ns3-ports.h (SwarmClock, SwarmRng,
                     SwarmTimerScheduler, address conversion, null ports), swarm-deferred-packet-queue.h
                     (DeferredPacketQueue: MaxPackets 64 / MaxAge 30 s attributes, drop accounting, in-place
-                    moves, Requeue in one batch; #46), swarm-wire-buffer.h (BufferWireWriter, ReadWireBytes:
+                    moves, Requeue in one batch; #46; hold classes with a cap and statistics each,
+                    RearmOnEnqueue; #126), swarm-wire-buffer.h (BufferWireWriter, ReadWireBytes:
                     the core wire format straight into and out of an ns-3 Buffer, #46),
                     swarm-routing-base.h (SwarmRoutingBase: sockets, deferred route, prev-hop tag, ports, Execute;
                     Observer() -> ControlTx/ControlRx/RouteChanged/DataDecision/StateSize trace sources,

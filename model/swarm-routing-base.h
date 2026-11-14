@@ -206,6 +206,14 @@ protected:
     /// The deferred queue holds data for `dst` and there is no route: look.
     virtual void StartDiscovery(Ipv4Address dst) = 0;
 
+    /// The hold class (DeferredPacket::holdClass, #126) of a data packet to
+    /// `dst` the base defers on its own (RouteInput, and RouteOutput's
+    /// loopback bounce), read before StartDiscovery. The class selects a cap
+    /// and statistics in the deferred queue (AntHocNet: a first setup or a
+    /// reconvergence). The default, 0, is the one class every packet had
+    /// before.
+    virtual uint8_t HoldClassFor(Ipv4Address /*dst*/) { return 0; }
+
     /// A control message arrived from one-hop neighbour `from` on the
     /// interface whose address is `receiver`.
     virtual void RecvControl(Ptr<Packet> p, Ipv4Address from, Ipv4Address receiver) = 0;
@@ -287,8 +295,9 @@ protected:
     /// protocol records what it wants. False when it cannot be sent (no
     /// forwarding callback seen yet, or no interface toward `next`).
     bool ResendData(Ptr<const Packet> p, const Ipv4Header& header, Ipv4Address next);
-    /// Sends every held packet to `dst` that now has a next hop; the rest go
-    /// back to the queue, keeping their first enqueue time.
+    /// Sends every held packet to `dst` that now has a next hop (accounted
+    /// with DeferredPacketQueue::NoteForwarded); the rest go back to the
+    /// queue, keeping their first enqueue time and hold class.
     void ReleaseDeferred(Ipv4Address dst);
     /// Drops every held packet to `dst` (a core's DiscardPending).
     void DiscardDeferred(Ipv4Address dst);
@@ -300,6 +309,10 @@ protected:
     /// OnDataForwarded and ForwardData (swarm-routing/ns3-swarm-core#40).
     void Defer(Ptr<const Packet> p, const Ipv4Header& header, const UnicastForwardCallback& ucb,
                const ErrorCallback& ecb);
+    /// The same, in hold class `holdClass` instead of HoldClassFor's (#126):
+    /// e.g. a packet re-injected after a MAC failure (AntHocNet's repair).
+    void Defer(Ptr<const Packet> p, const Ipv4Header& header, const UnicastForwardCallback& ucb,
+               const ErrorCallback& ecb, uint8_t holdClass);
 
     /// Carries out the decisions a core returns that need no data packet in
     /// hand: Unicast and Broadcast of a control message (`encode` turns the
