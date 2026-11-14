@@ -77,11 +77,14 @@ cmake --install build/core --prefix /path/to/prefix
 ```
 
 ```cmake
-find_package(swarm-core 0.3 CONFIG REQUIRED)   # with CMAKE_PREFIX_PATH=/path/to/prefix
+find_package(swarm-core CONFIG REQUIRED)   # with CMAKE_PREFIX_PATH=/path/to/prefix
 target_link_libraries(my_protocol_core PUBLIC swarm::core)
 ```
 
-The package version is the repository's `VERSION`. From 1.0 a release
+`find_package(swarm-core <major>.<minor> CONFIG REQUIRED)` also checks the
+installed version against the one you need:
+
+the package version is the repository's `VERSION`. From 1.0 a release
 satisfies a request for any earlier version of its major (`SameMajorVersion`);
 before 1.0 any minor may break the API ([docs/api-policy.md](docs/api-policy.md)),
 so a 0.y release satisfies a request for 0.y only (`SameMinorVersion`). A
@@ -96,8 +99,7 @@ subdirectory is `core`):
 FetchContent_Declare(swarm_core
   URL https://github.com/swarm-routing/ns3-swarm-core/releases/download/v<ver>/swarm-core-<ver>.tar.gz
   URL_HASH SHA256=<the tarball's line in the release's SHA256SUMS>
-  DOWNLOAD_EXTRACT_TIMESTAMP TRUE
-  SOURCE_SUBDIR core)
+  SOURCE_SUBDIR core)   # add DOWNLOAD_EXTRACT_TIMESTAMP TRUE on CMake 3.24+
 FetchContent_MakeAvailable(swarm_core)
 ```
 

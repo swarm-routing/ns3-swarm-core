@@ -27,10 +27,16 @@ if(SWARM_CORE_FROM STREQUAL "package")
   message(STATUS "swarm-core ${swarm-core_VERSION} from ${swarm-core_DIR}")
 elseif(SWARM_CORE_FROM STREQUAL "url")
   include(FetchContent)
+  # DOWNLOAD_EXTRACT_TIMESTAMP is CMake 3.24+; an older CMake would read it as
+  # part of URL_HASH's value.
+  set(_swarm_core_timestamp)
+  if(CMAKE_VERSION VERSION_GREATER_EQUAL 3.24)
+    set(_swarm_core_timestamp DOWNLOAD_EXTRACT_TIMESTAMP TRUE)
+  endif()
   FetchContent_Declare(swarm_core
     URL ${SWARM_CORE_URL}
     URL_HASH SHA256=${SWARM_CORE_SHA256}
-    DOWNLOAD_EXTRACT_TIMESTAMP TRUE
+    ${_swarm_core_timestamp}
     SOURCE_SUBDIR core)
   FetchContent_MakeAvailable(swarm_core)
 else()

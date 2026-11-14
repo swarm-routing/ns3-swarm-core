@@ -75,7 +75,8 @@ ctest --test-dir "$build/sanitized" --output-on-failure >/dev/null ||
 # --- the installed package (#133) --------------------------------------------
 ver=$(cat "$repo/VERSION")
 IFS=. read -r major minor _ <<<"$ver"
-cmake -S "$repo/core" -B "$build/core" -DSWARM_CORE_TESTS=OFF >/dev/null
+# CMAKE_INSTALL_LIBDIR=lib: GNUInstallDirs may pick lib64, and the paths below are fixed
+cmake -S "$repo/core" -B "$build/core" -DSWARM_CORE_TESTS=OFF -DCMAKE_INSTALL_LIBDIR=lib >/dev/null
 cmake --build "$build/core" -j "$(nproc)" >/dev/null
 cmake --install "$build/core" --prefix "$build/prefix" >/dev/null
 for f in include/swarm-core/swarm-ports.h include/swarm-core/testbench/swarm-testbench.h \
@@ -83,7 +84,7 @@ for f in include/swarm-core/swarm-ports.h include/swarm-core/testbench/swarm-tes
          lib/cmake/swarm-core/swarm-coreTargets.cmake; do
     [ -f "$build/prefix/$f" ] || fail "the install has no $f"
 done
-compgen -G "$build/prefix/lib*/libswarm_core.a" >/dev/null || fail "the install has no libswarm_core.a"
+[ -f "$build/prefix/lib/libswarm_core.a" ] || fail "the install has no lib/libswarm_core.a"
 
 pkg=$repo/core/test/consumer-package
 cmake -S "$pkg" -B "$build/package" -DCMAKE_PREFIX_PATH="$build/prefix" -DSWARM_CORE_WANT="$ver" >/dev/null ||
