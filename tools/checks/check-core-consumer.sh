@@ -69,7 +69,9 @@ bad = [c["file"] for c in commands if "-Werror" in c["command"].split()]
 for name in bad:
     print(f"-Werror on {name}", file=sys.stderr)
 # The consumer sets no standard: swarm::core's compile feature must raise it.
-std = re.compile(r"^-std=(c|gnu)\+\+" + sys.argv[2] + "$")
+# CMake may spell C++23 with the draft name (-std=c++2b), as older CMake does for Clang.
+draft = {"20": "2a", "23": "2b", "26": "2c"}.get(sys.argv[2], sys.argv[2])
+std = re.compile(r"^-std=(c|gnu)\+\+(" + sys.argv[2] + "|" + draft + ")$")
 for c in commands:
     if c["file"].endswith("/consumer.cc") and not any(std.match(a) for a in c["command"].split()):
         print(f"consumer.cc does not compile at C++{sys.argv[2]}: {c['command']}", file=sys.stderr)

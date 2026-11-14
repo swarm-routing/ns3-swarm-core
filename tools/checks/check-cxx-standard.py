@@ -27,6 +27,11 @@ STANDARD = re.compile(r"^\s*set\(CMAKE_CXX_STANDARD\s+(\d+)\s*\)", re.M)
 FEATURE = re.compile(r"\bcxx_std_(\d+)\b")
 
 
+def uncommented(text: str) -> str:
+    """CMake text without its line comments, so a commented-out line counts for nothing."""
+    return "\n".join(line.split("#", 1)[0] for line in text.splitlines())
+
+
 def ns3_minimum(ns3: Path) -> int:
     macros = ns3 / "build-support" / "macros-and-definitions.cmake"
     found = MINIMUM.findall(macros.read_text())
@@ -36,7 +41,7 @@ def ns3_minimum(ns3: Path) -> int:
 
 
 def core_standards(cmakelists: Path) -> tuple[int, list[int]]:
-    text = cmakelists.read_text()
+    text = uncommented(cmakelists.read_text())
     found = STANDARD.findall(text)
     if len(found) != 1:
         raise ValueError(
@@ -104,6 +109,13 @@ def self_test() -> int:
         ("no feature", "23", core("23", None), 1),
         ("ns-3 declares no minimum", None, core("23", "23"), 2),
         ("two standards in core/", "23", core("23", "23") + "set(CMAKE_CXX_STANDARD 20)\n", 2),
+        ("a feature in a comment is not one", "23", "# cxx_std_20\n" + core("23", "23"), 0),
+        (
+            "a commented-out feature is missing",
+            "23",
+            core("23", None) + "# target_compile_features(x PUBLIC cxx_std_23)\n",
+            1,
+        ),
         (
             "a standard in a comment is not one",
             "23",
