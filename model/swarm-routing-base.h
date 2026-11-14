@@ -240,6 +240,28 @@ protected:
     virtual void OnDataUndelivered(Ptr<const Packet> /*p*/, const Ipv4Header& /*header*/,
                                    Ipv4Address /*failedNext*/, Ipv4Address /*prev*/) {}
 
+    /// One call per unicast frame the Wi-Fi MAC gave up on at its retry
+    /// limit (a WifiLinkMonitor on the node), for a protocol that reports
+    /// such a failure once, knowing whether the lost frame was data (#128;
+    /// AntHocNet's reportTxFailure(next, dataDest)).
+    ///
+    /// `neighbor` is the monitor's IP for the frame's receiver
+    /// (Ipv4Address() when it does not know it) and `mac` its MAC, so a
+    /// protocol can resolve the neighbour its own way. For a data datagram,
+    /// `p` (IP header removed) and `header` carry it. For the protocol's own
+    /// control (UDP to ControlPort), `control` is true and `p` and `header`
+    /// are null. For anything else (no whole IPv4 datagram: an A-MSDU, a MAC
+    /// fragment, another EtherType; or a broadcast or multicast IP
+    /// destination) all three are null / false.
+    ///
+    /// The default calls OnLinkFailure(neighbor) when the neighbour is
+    /// known, then, for data, OnDataUndelivered with the previous hop: the
+    /// two hooks as they fired before this one existed. A protocol that
+    /// overrides it and does not call it gets neither of them for this drop.
+    /// Not called while the node is down.
+    virtual void OnTxFailure(Ipv4Address neighbor, Mac48Address mac, Ptr<const Packet> p,
+                             const Ipv4Header* header, bool control);
+
     /// Lifecycle hooks (#43). Each defaults to nothing; the base does the
     /// common part (timers, deferred queue, refusing routing) around them.
     /// DoNodeShutdown: the node is still up; send the protocol's leaving
@@ -365,8 +387,7 @@ private:
     int32_t InterfaceTowards(Ipv4Address next) const;
     void PurgeTick();
     void RecvSocket(Ptr<Socket> socket);
-    void WifiLinkFailed(Ipv4Address neighbor, Mac48Address mac);
-    void WifiUndelivered(Ptr<const Packet> datagram, Ipv4Address neighbor);
+    void WifiTxFailure(Ipv4Address neighbor, Mac48Address mac, Ptr<const Packet> datagram);
     void IslLinkChanged(Ipv4Address peer, bool up);
     /// OnLinkUp for the peer of every interface whose beacons are suppressed.
     void AnnounceLinkStatePeers();
