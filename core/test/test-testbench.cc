@@ -16,6 +16,7 @@
 #include <deque>
 #include <map>
 #include <memory>
+#include <stdexcept>
 #include <string>
 #include <vector>
 
@@ -359,6 +360,14 @@ void TestTestbenchMac(Checker& c) {
     p2.timers().cancel(h);
     net.run(20.0);
     c.check(!ran, "ITimerScheduler: cancellable");
+    bool threw = false;
+    try {
+        net.install([](tb::NodePorts<int>& p) { return std::make_unique<Recorder>(p); });
+    } catch (const std::logic_error&) {
+        threw = true;
+    }
+    c.check(threw, "a second install is refused");
+    c.check(&net.nodeAs<Recorder>(0) == &n0, "and the adapters stay");
 }
 
 void TestTestbenchExample(Checker& c) {

@@ -75,6 +75,7 @@
 #include <map>
 #include <memory>
 #include <set>
+#include <stdexcept>
 #include <utility>
 #include <vector>
 
@@ -371,9 +372,12 @@ public:
     Network& operator=(const Network&) = delete;
 
     /// One adapter per node, made by `factory` in address order; each
-    /// start() runs at time 0 as an event, in the same order.
+    /// start() runs at time 0 as an event, in the same order. Once per
+    /// network: a second call throws std::logic_error, since events the
+    /// first queued would reach the replaced adapters.
     void install(const Factory& factory) {
-        nodes_.clear();
+        if (installed_) throw std::logic_error("testbench::Network::install called twice");
+        installed_ = true;
         for (auto& p : ports_)
             nodes_.push_back(factory(*p));
         for (std::size_t i = 0; i < nodes_.size(); ++i) {
@@ -525,6 +529,7 @@ private:
     Rng channel_;
     std::vector<std::unique_ptr<NodePorts<Msg>>> ports_;
     std::vector<std::unique_ptr<INodeAdapter<Msg>>> nodes_;
+    bool installed_ = false;
     std::map<std::pair<NodeAddress, NodeAddress>, double> loss_;
     std::array<std::uint64_t, 256> sentByKind_{};
     std::vector<std::uint64_t> sentBy_;
