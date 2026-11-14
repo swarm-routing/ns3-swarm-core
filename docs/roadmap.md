@@ -102,10 +102,16 @@ Teal boxes have shipped: v0.1.0 and v0.2.0 (whose four issues, #40, #33, #43
 and #46, are closed).
 
 The sequencing rule worth memorising: every protocol links `main`, so a
-swarm-core release is only as good as its consumers' CI. v0.2.0 was additive
-and byte-identical for the existing consumers (ARA, BeeAdHoc), all green on
-`main`, when it shipped; 1.0.0 needs two gated protocol releases built on it
-unchanged.
+swarm-core release is only as good as its consumers' CI. v0.2.0 (tag
+`v0.2.0` at `2fb52d2`, 2026-11-13) was additive; no consumer run was recorded
+at `2fb52d2` itself. The nearest record: ARA's and BeeAdHoc's `ns-3` workflow
+on their `main`, which builds swarm-core `main`, passed at 07:40 and 07:02 UTC
+that day
+([ARA run 43387381816](https://github.com/swarm-routing/ARA/actions/runs/43387381816),
+[BeeAdHoc run 43382837899](https://github.com/swarm-routing/BeeAdHoc/actions/runs/43382837899)),
+on swarm-core `71ab416`, whose changes since the tag (#104, #105, #106, #109)
+touch build files, workflows and docs, no source under `core/` or `model/`.
+1.0.0 needs two gated protocol releases built on it unchanged.
 
 ### The release train
 
@@ -129,7 +135,7 @@ record of swarm-core's part:
 | Release | Exit criteria |
 |---|---|
 | **v0.1.0** "the shared module" (shipped 2026-11-11) | The module released through the org `reusable-release.yml`: `make dist` builds and checks the module tarball ([#38](https://github.com/swarm-routing/ns3-swarm-core/issues/38)). Epic [#6](https://github.com/swarm-routing/ns3-swarm-core/issues/6)'s third criterion is met (ARA and BeeAdHoc `ns3/` green against `main`, swarm-routing/ARA#40, swarm-routing/BeeAdHoc#48). |
-| **v0.2.0** "adapter complete" (shipped 2026-11-13) | `SwarmRoutingBase` carries what the first gated protocols need: hold a packet with its protocol header and send one back to the previous hop ([#40](https://github.com/swarm-routing/ns3-swarm-core/issues/40), P1; ARA backtracking, Termite discovery); an optional entry lifetime on `DedupHistory` ([#33](https://github.com/swarm-routing/ns3-swarm-core/issues/33)); node shutdown, crash and restart with a helper that scripts failures identically for every arm ([#43](https://github.com/swarm-routing/ns3-swarm-core/issues/43)); the deferred queue and wire path without O(n²) rebuilds or per-packet allocation ([#46](https://github.com/swarm-routing/ns3-swarm-core/issues/46)). **Exit:** every change is additive, default output is byte-identical (same seed, same bytes), and every consumer (ARA, BeeAdHoc, the toy protocol in `test/`) is green. |
+| **v0.2.0** "adapter complete" (shipped 2026-11-13) | `SwarmRoutingBase` carries what the first gated protocols need: hold a packet with its protocol header and send one back to the previous hop ([#40](https://github.com/swarm-routing/ns3-swarm-core/issues/40), P1; ARA backtracking, Termite discovery); an optional entry lifetime on `DedupHistory` ([#33](https://github.com/swarm-routing/ns3-swarm-core/issues/33)); node shutdown, crash and restart with a helper that scripts failures identically for every arm ([#43](https://github.com/swarm-routing/ns3-swarm-core/issues/43)); the deferred queue and wire path without O(n²) rebuilds or per-packet allocation ([#46](https://github.com/swarm-routing/ns3-swarm-core/issues/46)). **Exit:** every change is additive, default output is byte-identical (same seed, same bytes), and every consumer (ARA, BeeAdHoc, the toy protocol in `test/`) is green. Released as tag `v0.2.0` (`2fb52d2`, 2026-11-13); the consumer check at that commit was not recorded, the nearest green consumer runs are named under "What blocks what". |
 | **v0.3.0** "metrics and testbench" | The metric seams and the testbench: energy-aware `ILinkMetric` ([#2](https://github.com/swarm-routing/ns3-swarm-core/issues/2)), fuzzy composite `ILinkMetric` ([#3](https://github.com/swarm-routing/ns3-swarm-core/issues/3)), ISL neighbour discovery without hello ([#4](https://github.com/swarm-routing/ns3-swarm-core/issues/4)), and a shared discrete-event testbench for protocol cores ([#15](https://github.com/swarm-routing/ns3-swarm-core/issues/15)). |
 | **v1.0.0** "API frozen" | `kSwarmCoreApiVersion` frozen with a written deprecation policy (#83); ARA and BeeAdHoc gated releases built on it with no API change; AntHocNet's `core/` and ns-3 adapter running on it ([#14](https://github.com/swarm-routing/ns3-swarm-core/issues/14): every protocol builds on swarm-core, maintainer decision 2026-11-12). The host contract for other simulators and real computers is **v2.0.0** ([#82](https://github.com/swarm-routing/ns3-swarm-core/issues/82); swarm-routing/.github#253). |
 
