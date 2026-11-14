@@ -11,6 +11,7 @@
 #include "swarm-wifi-link-monitor.h"
 
 #include "ns3/boolean.h"
+#include "ns3/uinteger.h"
 #include "ns3/inet-socket-address.h"
 #include "ns3/ipv4-l3-protocol.h"
 #include "ns3/ipv4-route.h"
@@ -108,6 +109,13 @@ TypeId SwarmRoutingBase::GetTypeId() {
                           BooleanValue(false),
                           MakeBooleanAccessor(&SwarmRoutingBase::m_islHelloSuppression),
                           MakeBooleanChecker())
+            .AddAttribute("MaxPeerRoutes",
+                          "Entries the peer map (SetPeerRoute: canonical address -> "
+                          "interface and link address) holds at most; a new one beyond it is "
+                          "refused (#127).",
+                          UintegerValue(1024),
+                          MakeUintegerAccessor(&SwarmRoutingBase::m_maxPeerRoutes),
+                          MakeUintegerChecker<uint32_t>(1))
             .AddTraceSource("ControlTx",
                             "A control message left this node: its kind (the protocol's wire "
                             "type byte), whether it was broadcast, and its size in bytes.",
@@ -352,32 +360,74 @@ bool SwarmRoutingBase::IsMyAddress(Ipv4Address a) const {
     return false;
 }
 
-int32_t SwarmRoutingBase::InterfaceTowards(Ipv4Address next) const {
+SwarmRoutingBase::NextHopRoute SwarmRoutingBase::ResolveNextHop(Ipv4Address next) const {
+    // (1) A directly attached subnet: every single-interface topology.
     for (const auto& kv : m_sockets) {
         const Ipv4InterfaceAddress& ifa = kv.iface;
         if (next.CombineMask(ifa.GetMask()) == ifa.GetLocal().CombineMask(ifa.GetMask())) {
-            return kv.ifIndex;
+            return {kv.ifIndex, next};
         }
     }
-    if (!m_sockets.empty()) {
-        return m_sockets.begin()->ifIndex;
+    // (2) A peer named by its canonical address (#127), as AntHocNet's
+    // ResolveNextHop: through the interface its entry names, if the node has it.
+    if (const auto it = m_peerRoutes.find(next);
+        it != m_peerRoutes.end() && m_ipv4 && it->second.iface < m_ipv4->GetNInterfaces()) {
+        return {static_cast<int32_t>(it->second.iface), it->second.link};
     }
-    return -1;
+    // (3) The first interface.
+    if (!m_sockets.empty()) {
+        return {m_sockets.begin()->ifIndex, next};
+    }
+    return {};
+}
+
+int32_t SwarmRoutingBase::InterfaceTowards(Ipv4Address next) const {
+    return ResolveNextHop(next).ifIdx;
+}
+
+bool SwarmRoutingBase::SetPeerRoute(Ipv4Address canonical, uint32_t interface,
+                                    Ipv4Address linkAddress) {
+    if (canonical == Ipv4Address()) {
+        return false;
+    }
+    // One entry per (interface, link address): the pair moves to `canonical`.
+    for (auto it = m_peerRoutes.begin(); it != m_peerRoutes.end();) {
+        if (it->first != canonical && it->second.iface == interface &&
+            it->second.link == linkAddress) {
+            it = m_peerRoutes.erase(it);
+        } else {
+            ++it;
+        }
+    }
+    auto it = m_peerRoutes.find(canonical);
+    if (it == m_peerRoutes.end()) {
+        if (m_peerRoutes.size() >= m_maxPeerRoutes) {
+            return false;
+        }
+        it = m_peerRoutes.emplace(canonical, PeerRoute{}).first;
+    }
+    it->second = PeerRoute{interface, linkAddress};
+    return true;
+}
+
+void SwarmRoutingBase::ClearPeerRoute(Ipv4Address canonical) {
+    m_peerRoutes.erase(canonical);
 }
 
 Ptr<Ipv4Route> SwarmRoutingBase::DirectRoute(Ipv4Address dst, Ipv4Address next,
                                              Ipv4Address src) const {
-    return DirectRoute(dst, next, src, InterfaceTowards(next));
+    return DirectRoute(dst, src, ResolveNextHop(next));
 }
 
-Ptr<Ipv4Route> SwarmRoutingBase::DirectRoute(Ipv4Address dst, Ipv4Address next, Ipv4Address src,
-                                             int32_t ifIdx) const {
+Ptr<Ipv4Route> SwarmRoutingBase::DirectRoute(Ipv4Address dst, Ipv4Address src,
+                                             const NextHopRoute& hop) const {
+    const int32_t ifIdx = hop.ifIdx;
     if (ifIdx < 0) {
         return nullptr;
     }
     Ptr<Ipv4Route> route = Create<Ipv4Route>();
     route->SetDestination(dst);
-    route->SetGateway(next);
+    route->SetGateway(hop.gateway);
     route->SetSource(src == Ipv4Address() || src.IsAny() ? m_ipv4->GetAddress(ifIdx, 0).GetLocal()
                                                          : src);
     route->SetOutputDevice(m_ipv4->GetNetDevice(ifIdx));
@@ -493,8 +543,9 @@ bool SwarmRoutingBase::RouteInput(Ptr<const Packet> p, const Ipv4Header& header,
 
 void SwarmRoutingBase::ForwardData(Ptr<const Packet> p, const Ipv4Header& header, Ipv4Address next,
                                    const UnicastForwardCallback& ucb) {
-    const int32_t ifIdx = InterfaceTowards(next);  // once per forward (#46)
-    Ptr<Ipv4Route> route = DirectRoute(header.GetDestination(), next, header.GetSource(), ifIdx);
+    const NextHopRoute hop = ResolveNextHop(next);  // once per forward (#46)
+    const int32_t ifIdx = hop.ifIdx;
+    Ptr<Ipv4Route> route = DirectRoute(header.GetDestination(), header.GetSource(), hop);
     if (!route || ucb.IsNull()) {
         return;
     }
@@ -562,6 +613,7 @@ void SwarmRoutingBase::GoDown(SwarmLifecycleOp op) {
     if (m_queue) {
         m_queue->Flush();
     }
+    m_peerRoutes.clear();  // a restarted node learns its peers again (#127)
     m_lifecycle(m_state, op);
 }
 
@@ -752,11 +804,13 @@ void SwarmRoutingBase::UnicastControl(Ptr<Packet> p, Ipv4Address neighbor) {
     if (IsDown()) {
         return;
     }
-    const int32_t ifIdx = InterfaceTowards(neighbor);
+    // To the neighbour's address on the link that reaches it: itself, or
+    // its peer-map link address (#127), as AntHocNet's SendAnt.
+    const NextHopRoute hop = ResolveNextHop(neighbor);
     for (const auto& kv : m_sockets) {
-        if (kv.ifIndex == ifIdx) {
-            m_directTo = neighbor;
-            kv.socket->SendTo(p, 0, InetSocketAddress(neighbor, ControlPort()));
+        if (kv.ifIndex == hop.ifIdx) {
+            m_directTo = hop.gateway;
+            kv.socket->SendTo(p, 0, InetSocketAddress(hop.gateway, ControlPort()));
             m_directTo = Ipv4Address();
             return;
         }

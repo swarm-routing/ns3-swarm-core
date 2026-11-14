@@ -142,6 +142,12 @@ public:
         Observer().onControlSent(kMessage, false, size);
     }
 
+    /// SetPeerRoute is a protected service; the test sets entries through this.
+    bool PeerRoute(Ipv4Address canonical, uint32_t iface, Ipv4Address link) {
+        return SetPeerRoute(canonical, iface, link);
+    }
+    void ForgetPeer(Ipv4Address canonical) { ClearPeerRoute(canonical); }
+
     void DiscardViaCore(Ipv4Address dst) {
         Execute(swarm::core::RouteDecision<uint32_t>::discardPending(ToNodeAddress(dst)),
                 [](uint32_t s) { return Create<Packet>(s); });
@@ -1695,6 +1701,156 @@ private:
     }
 };
 
+/// The peer map (#127): n0 has two point-to-point links, to n2 first (its
+/// first interface) and to n1; n1 also links to n3, and the protocol names
+/// n1 by its canonical address, n1's address on that n1 - n3 link, a subnet
+/// n0 is not attached to. Data, a unicast control and a released deferred
+/// packet must leave n0 toward n1 on the right device, with n1's link
+/// address as gateway; without the entry they take the first interface and
+/// are lost.
+class PeerMapTestCase : public TestCase {
+public:
+    explicit PeerMapTestCase(bool withMap)
+        : TestCase(std::string("glue: a next hop named by its canonical address leaves on its "
+                               "peer's link") +
+                   (withMap ? "" : "; without the peer map it does not")),
+          m_withMap(withMap) {}
+
+private:
+    bool m_withMap;
+
+    void DoRun() override {
+        SwarmCoreSeed(1);
+        NodeContainer nodes;
+        nodes.Create(4);
+        Ptr<Node> n0 = nodes.Get(0);
+        Ptr<Node> n1 = nodes.Get(1);
+        Ptr<Node> n2 = nodes.Get(2);
+        Ptr<Node> n3 = nodes.Get(3);
+        PointToPointHelper p2p;
+        p2p.SetChannelAttribute("Delay", StringValue("2ms"));
+        p2p.SetDeviceAttribute("DataRate", StringValue("10Mbps"));
+        NetDeviceContainer d02 = p2p.Install(n0, n2);  // n0's interface 1
+        NetDeviceContainer d01 = p2p.Install(n0, n1);  // n0's interface 2
+        NetDeviceContainer d13 = p2p.Install(n1, n3);
+        SwarmRoutingHelper helper("ns3::swarmtest::ToyProtocol");
+        helper.Install(nodes);
+        Ipv4AddressHelper a;
+        a.SetBase("10.1.2.0", "255.255.255.0");
+        a.Assign(d02);
+        a.SetBase("10.1.1.0", "255.255.255.0");
+        a.Assign(d01);
+        a.SetBase("10.1.3.0", "255.255.255.0");
+        a.Assign(d13);
+        const Ipv4Address n1link("10.1.1.2");   // n1 on the n0 - n1 link
+        const Ipv4Address n1canon("10.1.3.1");  // n1's canonical address
+        const Ipv4Address n3a("10.1.3.2");
+        const Ipv4Address n4a("10.1.3.99");  // a second destination, for the deferred path
+        NS_TEST_ASSERT_MSG_EQ(Addr(n1, 1), n1link, "topology: n1's link address");
+        NS_TEST_ASSERT_MSG_EQ(Addr(n1, 2), n1canon, "topology: n1's canonical address");
+        Toy(n0)->routes[n3a] = n1canon;
+        Toy(n1)->routes[n3a] = n3a;
+        Toy(n0)->pending[n4a] = n1canon;  // learned 0.5 s after discovery: then released
+        Toy(n1)->routes[n4a] = n3a;       // n1 hands it on toward n3's link
+        if (m_withMap) {
+            NS_TEST_EXPECT_MSG_EQ(Toy(n0)->PeerRoute(n1canon, 2, n1link), true, "entry set");
+        }
+
+        // Which of n0's devices each packet left on.
+        std::map<uint32_t, uint32_t> txOnDevice;
+        for (uint32_t d = 0; d < 2; ++d) {
+            Ptr<NetDevice> dev = (d == 0 ? d02 : d01).Get(0);
+            dev->TraceConnectWithoutContext("MacTx",
+                                            MakeBoundCallback(
+                                                +[](std::map<uint32_t, uint32_t>* m, uint32_t idx,
+                                                    Ptr<const Packet>) { ++(*m)[idx]; },
+                                                &txOnDevice, d == 0 ? 1u : 2u));
+        }
+        std::vector<std::string> rx;
+        Ptr<Socket> sink = Sink(n3, &rx);
+        Ptr<Socket> src = Source(n0);
+        Simulator::Schedule(Seconds(1.0), [&]() { SendUdp(src, n3a, 100); });  // data
+        Simulator::Schedule(Seconds(1.5), [&]() { Toy(n0)->UnicastMessage(n1canon, 20); });
+        Simulator::Schedule(Seconds(2.0), [&]() { SendUdp(src, n4a, 120); });  // deferred
+        Simulator::Stop(Seconds(4));
+        Simulator::Run();
+
+        std::vector<std::string> fromN0;
+        for (const auto& l : Toy(n1)->controlLog) {
+            if (l.find("10.1.1.1->10.1.1.2 20") != std::string::npos) {
+                fromN0.push_back(l);
+            }
+        }
+        std::vector<Ipv4Address> dataAtN1 = Toy(n1)->dataFrom;
+        const auto fromN0Data =
+            std::count(dataAtN1.begin(), dataAtN1.end(), Ipv4Address("10.1.1.1"));
+        if (m_withMap) {
+            NS_TEST_EXPECT_MSG_EQ(rx.size(), 1u, "the data packet reached n3 through n1");
+            NS_TEST_EXPECT_MSG_EQ(fromN0.size(), 1u,
+                                  "the control reached n1 at its link address, from n0's link");
+            NS_TEST_EXPECT_MSG_EQ(fromN0Data, 2,
+                                  "n1 had both data packets from n0, the released one too");
+            NS_TEST_EXPECT_MSG_EQ(Toy(n0)->GetDeferredQueue()->Stats().released, 1u,
+                                  "the deferred packet was released");
+            NS_TEST_EXPECT_MSG_EQ(txOnDevice[1], 0u, "nothing left on the n0 - n2 device");
+            NS_TEST_EXPECT_MSG_GT(txOnDevice[2], 2u, "all three left on the n0 - n1 device");
+        } else {
+            NS_TEST_EXPECT_MSG_EQ(rx.size(), 0u, "the first interface does not reach n1");
+            NS_TEST_EXPECT_MSG_EQ(fromN0.size(), 0u, "nor does the control");
+            NS_TEST_EXPECT_MSG_EQ(fromN0Data, 0, "nor any data");
+            NS_TEST_EXPECT_MSG_EQ(txOnDevice[2], 0u, "nothing left on the n0 - n1 device");
+        }
+        Simulator::Destroy();
+    }
+};
+
+/// The peer map's bounds and lifetime (#127): one entry per canonical
+/// address and per (interface, link address), MaxPeerRoutes, ClearPeerRoute,
+/// cleared at shutdown.
+class PeerMapBoundsTestCase : public TestCase {
+public:
+    PeerMapBoundsTestCase() : TestCase("glue: the peer map is bounded and cleared at shutdown") {}
+
+private:
+    void DoRun() override {
+        SwarmCoreSeed(1);
+        Line line("10Mbps");
+        Ptr<ToyProtocol> t = Toy(line.nodes.Get(0));
+        UintegerValue max;
+        t->GetAttribute("MaxPeerRoutes", max);
+        NS_TEST_EXPECT_MSG_EQ(max.Get(), 1024u, "documented default MaxPeerRoutes");
+        Simulator::Schedule(Seconds(1.0), [&]() {
+            t->SetAttribute("MaxPeerRoutes", UintegerValue(2));
+            const Ipv4Address link("10.1.1.2");
+            NS_TEST_EXPECT_MSG_EQ(t->PeerRoute(Ipv4Address(), 1, link), false,
+                                  "0.0.0.0 is no node");
+            NS_TEST_EXPECT_MSG_EQ(t->PeerRoute(Ipv4Address("10.9.0.1"), 1, link), true, "first");
+            NS_TEST_EXPECT_MSG_EQ(t->PeerRoute(Ipv4Address("10.9.0.2"), 1, Ipv4Address("10.1.1.3")),
+                                  true, "second");
+            NS_TEST_EXPECT_MSG_EQ(t->PeerRoute(Ipv4Address("10.9.0.3"), 1, Ipv4Address("10.1.1.4")),
+                                  false, "a third beyond MaxPeerRoutes is refused");
+            NS_TEST_EXPECT_MSG_EQ(t->PeerRoute(Ipv4Address("10.9.0.1"), 1, Ipv4Address("10.1.1.4")),
+                                  true, "an existing entry is updated, even when full");
+            NS_TEST_EXPECT_MSG_EQ(t->PeerRoute(Ipv4Address("10.9.0.3"), 1, Ipv4Address("10.1.1.4")),
+                                  true, "a pair another canonical held moves (one per pair)");
+            NS_TEST_EXPECT_MSG_EQ(t->PeerRoute(Ipv4Address("10.9.0.4"), 1, Ipv4Address("10.1.1.5")),
+                                  false, "two entries: the move freed none");
+            t->ForgetPeer(Ipv4Address("10.9.0.2"));
+            NS_TEST_EXPECT_MSG_EQ(t->PeerRoute(Ipv4Address("10.9.0.4"), 1, Ipv4Address("10.1.1.5")),
+                                  true, "ClearPeerRoute freed one");
+            t->Shutdown();
+            t->Start();
+            NS_TEST_EXPECT_MSG_EQ(
+                t->PeerRoute(Ipv4Address("10.9.0.5"), 1, Ipv4Address("10.1.1.6")) &&
+                    t->PeerRoute(Ipv4Address("10.9.0.6"), 1, Ipv4Address("10.1.1.7")),
+                true, "shutdown cleared the map: room for two again");
+        });
+        Simulator::Stop(Seconds(2));
+        Simulator::Run();
+        Simulator::Destroy();
+    }
+};
+
 // --- EnergyMetricHook
 // ----------------------------------------------------------------
 
@@ -1890,6 +2046,9 @@ std::vector<TestCase*> MakeGlueTestCases() {
             new UndeliveredTestCase(UndeliveredTestCase::Variant::Plain),
             new UndeliveredTestCase(UndeliveredTestCase::Variant::Checksums),
             new UndeliveredTestCase(UndeliveredTestCase::Variant::MacFragments),
+            new PeerMapTestCase(true),
+            new PeerMapTestCase(false),
+            new PeerMapBoundsTestCase,
             new EnergyHookTestCase,
             new ObserverTestCase,
             new LifecycleTestCase,
