@@ -820,7 +820,9 @@ void SwarmRoutingBase::OnTxFailure(Ipv4Address neighbor, Mac48Address /*mac*/, P
     if (neighbor != Ipv4Address()) {
         OnLinkFailure(neighbor);
     }
-    if (p && header) {
+    // OnLinkFailure may have taken the node down: then no data hook, as when
+    // the two hooks came from two traces, each checking the state (#43).
+    if (p && header && !IsDown()) {
         SwarmPrevHopTag tag;
         const Ipv4Address prev =
             p->PeekPacketTag(tag) && IsMyAddress(tag.Get()) ? tag.GetFrom() : Ipv4Address();

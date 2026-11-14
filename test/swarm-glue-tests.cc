@@ -111,6 +111,9 @@ public:
     /// OnLinkFailure and OnDataUndelivered add "link" and "undelivered".
     std::vector<std::string> txLog;
     bool txOnly = false;
+    /// OnLinkFailure crashes the node (#128's default must then skip the
+    /// data hook).
+    bool crashOnLinkFailure = false;
     std::vector<Mac48Address> txMacs;
     std::vector<bool> markedFrom;  ///< per data packet seen: did it carry the mark?
     /// OnDataUndelivered (#40): (failed next hop, previous hop) per report; with
@@ -236,6 +239,9 @@ protected:
     void OnLinkFailure(Ipv4Address neighbor) override {
         failures.push_back(neighbor);
         txLog.emplace_back("link");
+        if (crashOnLinkFailure) {
+            Crash();
+        }
     }
 
     void OnTxFailure(Ipv4Address neighbor, Mac48Address mac, Ptr<const Packet> p,
@@ -1724,12 +1730,18 @@ private:
 /// OnLinkFailure + OnDataUndelivered sequence, an override replaces it.
 class TxFailureTestCase : public TestCase {
 public:
-    explicit TxFailureTestCase(bool txOnly)
+    enum class Variant { Default, Overridden, CrashInLinkFailure };
+
+    explicit TxFailureTestCase(Variant v)
         : TestCase(std::string("glue: one OnTxFailure per retry-limit drop, data or control") +
-                   (txOnly ? ", overridden" : ", default")),
-          m_txOnly(txOnly) {}
+                   (v == Variant::Default      ? ", default"
+                    : v == Variant::Overridden ? ", overridden"
+                                               : "; no data hook once OnLinkFailure took the "
+                                                 "node down")),
+          m_variant(v), m_txOnly(v == Variant::Overridden) {}
 
 private:
+    Variant m_variant;
     bool m_txOnly;
 
     void DoRun() override {
@@ -1750,6 +1762,7 @@ private:
         Toy(n0)->routes[n2a] = n1a;
         Toy(n1)->routes[n2a] = n2a;
         Toy(n1)->txOnly = m_txOnly;
+        Toy(n1)->crashOnLinkFailure = m_variant == Variant::CrashInLinkFailure;
 
         std::vector<std::string> rx;
         Ptr<Socket> sink = Sink(n2, &rx);
@@ -1771,6 +1784,16 @@ private:
         std::string got;
         for (const auto& l : Toy(n1)->txLog) {
             got += l + "; ";
+        }
+        if (m_variant == Variant::CrashInLinkFailure) {
+            // Down after the data drop: no OnDataUndelivered, and the control
+            // message is never sent.
+            NS_TEST_EXPECT_MSG_EQ(
+                (Toy(n1)->txLog == std::vector<std::string>{"tx data 10.1.1.3", "link"}), true,
+                "hook sequence: " + got);
+            NS_TEST_EXPECT_MSG_EQ(Toy(n1)->undelivered.size(), 0u, "no data hook when down");
+            Simulator::Destroy();
+            return;
         }
         NS_TEST_EXPECT_MSG_EQ((Toy(n1)->txLog == expected), true, "hook sequence: " + got);
         NS_TEST_ASSERT_MSG_EQ(Toy(n1)->txMacs.size(), 2u, "one call per lost frame");
@@ -1980,8 +2003,9 @@ std::vector<TestCase*> MakeGlueTestCases() {
             new UndeliveredTestCase(UndeliveredTestCase::Variant::Plain),
             new UndeliveredTestCase(UndeliveredTestCase::Variant::Checksums),
             new UndeliveredTestCase(UndeliveredTestCase::Variant::MacFragments),
-            new TxFailureTestCase(false),
-            new TxFailureTestCase(true),
+            new TxFailureTestCase(TxFailureTestCase::Variant::Default),
+            new TxFailureTestCase(TxFailureTestCase::Variant::Overridden),
+            new TxFailureTestCase(TxFailureTestCase::Variant::CrashInLinkFailure),
             new EnergyHookTestCase,
             new ObserverTestCase,
             new LifecycleTestCase,
