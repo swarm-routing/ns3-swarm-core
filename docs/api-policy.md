@@ -23,14 +23,16 @@ swarm-core's sources:
 | `model/` public classes | Every header the ns-3 module installs (`HEADER_FILES` in `CMakeLists.txt`): the public and **protected** members of each class (an adapter derives from `SwarmRoutingBase`, so its protected hooks and services are API), every `TypeId` name, every attribute (name, value type, default and what the default means) and every trace source (name and callback signature). |
 | `helper/` | `SwarmRoutingHelper`, `SwarmMonitorHelper`, `SwarmLifecycleHelper` and the structures they return (`SwarmRoutingStats`, ...). |
 | The module itself | The contrib module name `swarm-core`, the umbrella header `ns3/swarm-core-module.h`, `SwarmCoreSeed` and `kSwarmCoreApiVersion` (below). |
-| Default output | With every new option at its default, the same seed gives the same bytes (org invariant 5): a consumer's `##RUN##` lines do not move because swarm-core was updated. |
+| Default output | With every new option at its default, the same seed gives the same bytes (org invariant 5): a consumer's `##RUN##` lines do not move because swarm-core was updated, except by a bug fix, which follows the Patch rule below. |
 
 Not API, and free to change in any release: namespace
 `swarm::core::test`, `core/test/`, `core/bench/`, private members, log output
 (`NS_LOG`), the file layout beyond the headers listed above, `tools/`, CI
 workflows, timings and memory use (a performance change is never breaking,
-but one that moves default output is, as above). The promise is source
-compatibility: a consumer rebuilds against a new release unchanged. Binary
+but one that changes default output on purpose is, as above). The promise
+is source compatibility: a consumer rebuilds against a new minor or patch
+release unchanged, with deprecation warnings not treated as errors
+("Deprecation" below). Binary
 (ABI) compatibility is not promised; every consumer compiles swarm-core from
 source.
 
@@ -41,10 +43,12 @@ Releases follow [SemVer](https://semver.org), read against the API above:
 - **Major** (`X.0.0`): any breaking change. Removing or renaming anything in
   the table; changing a signature, a type, an attribute's default or its
   meaning, a trace source's signature, a wire layout; adding a pure virtual
-  function to a port or to `SwarmRoutingBase`; changing default output on
-  purpose.
+  function to a port or to `SwarmRoutingBase`; adding an overload that makes
+  an existing call ambiguous or changes which overload it selects; changing
+  default output on purpose.
 - **Minor** (`1.Y.0`): additive changes. A new header, class, function,
-  overload, attribute or trace source; a new virtual function with a default
+  attribute or trace source; a new overload that leaves every existing call
+  resolving as before; a new virtual function with a default
   body; a new option that is off by default and leaves default output
   byte-identical; a deprecation (below).
 - **Patch** (`1.Y.Z`): fixes and documentation. A bug fix that changes
@@ -83,9 +87,17 @@ An API is retired in two steps, never one:
    opens an issue in each consumer that uses it (found with `git grep` in
    each repository listed above), linked from the PR.
 2. **Remove in a major release**, and no earlier than two minor releases
-   after the deprecation shipped. Consumers build with strict warnings as
-   errors, so the deprecation warning is the notice: a consumer moves within
-   that window.
+   after the deprecation shipped. The deprecation warning is the notice: a
+   consumer moves within that window.
+
+A deprecation must not break a consumer's build. The consumers compile
+their own code with strict warnings as errors, so each keeps
+`-Wdeprecated-declarations` a warning (`-Wno-error=deprecated-declarations`
+next to its `-Werror`): the warning shows in every build, the build stays
+green. The org's protocol repositories add that flag before v1.0.0 (tracked
+on #83). And as with a breaking change, the PR that deprecates a name in use
+comes with the consumers' moves in the same round, so in practice no
+consumer carries the warning for long.
 
 A deprecated API keeps working unchanged until it is removed: deprecation
 never changes behaviour or default output.
