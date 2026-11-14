@@ -33,6 +33,8 @@ core/               simulator-free primitives, namespace swarm::core — MIT OR 
                     swarm-observer.{h,cc} (IRouterObserver, KindName,
                     CountingObserver -> RouterStats: bounded counters); CMakeLists.txt builds it alone, no ns-3
                     swarm-core-sources.cmake: the files of core/, listed once for both builds (#100)
+                    swarm-coreConfig.cmake.in: the installed CMake package swarm-core (find_package; imported
+                    swarm::core; version from VERSION, SameMajorVersion from 1.0, SameMinorVersion before; #133)
 core/testbench/     swarm-testbench.h: the discrete-event testbench for protocol cores' tests (#15; header-only,
                     MIT OR GPL-2.0-only): EventQueue (bounded, cancellable), Rng (SplitMix64 streams), Topology
                     (links, partition), Network<Msg> (ideal MAC, linkAt, setLoss, counters, bounded trace + digest),
@@ -40,6 +42,8 @@ core/testbench/     swarm-testbench.h: the discrete-event testbench for protocol
 core/test/          the core tests, one function per primitive (MIT OR GPL-2.0-only); run by ctest and by test.py; test-testbench.cc: the bench's tests and the reference trend
                     (local repair vs re-flood on a 6-node line with one break)
 core/test/consumer/ a scratch CMake project that links swarm::core, built by tools/checks/check-core-consumer.sh (#100)
+core/test/consumer-package/  the same consumer on a released swarm-core: find_package against an install prefix, or
+                    FetchContent of the release tarball by URL + URL_HASH (#133, #134); built by the same script
 core/bench/         dev-only microbenchmarks (MIT OR GPL-2.0-only; Google Benchmark, pinned, -DSWARM_CORE_BENCH=ON;
                     exempt from the core-include check, as it includes <benchmark/benchmark.h>)
 model/              ns-3 glue — GPL-2.0-only; each file derived from AntHocNet names its source file and commit:
@@ -69,7 +73,8 @@ test/               swarm-core test suite: wraps every core/test/ function as a 
 examples/           swarm-core-seed: the determinism gate's program (seeded draws + a roulette sequence through IRng);
                     swarm-core-queue-bench: dev-only drain cost of the deferred queue (#46), not run by CI
 tools/checks/       check-core-consumer.sh: core/ in another CMake project gets the library alone (no test target, no ctest
-                    entry, no -Werror of ours); run by the `core` check — MIT OR GPL-2.0-only
+                    entry, no -Werror of ours), installs as the package find_package finds (its version rule
+                    included), and its dist.sh tarball builds by URL + URL_HASH; run by the `core` check — MIT OR GPL-2.0-only
 tools/release/      dist.sh: the release asset (swarm-core-<ver>.tar.gz), checked in a clean ns3-dev tree; `make dist` — MIT OR GPL-2.0-only
 .cz.toml, VERSION   Commitizen config and the version it bumps; releases run through release.yml
 .github/workflows/  ci.yml (reusable-ns3-ci: strict warnings, coverage, determinism, format, headers), core.yml (check `core`:
@@ -100,7 +105,8 @@ runs these on every PR:
 
 ```bash
 cmake -S core -B build/core && cmake --build build/core && ctest --test-dir build/core
-tools/checks/check-core-consumer.sh   # core/ added by another CMake project: the library alone (#100)
+tools/checks/check-core-consumer.sh   # core/ added by another CMake project: the library alone (#100); installed + find_package, the tarball by URL (#133)
+cmake --install build/core --prefix /tmp/swarm-core   # the CMake package swarm-core (find_package(swarm-core CONFIG))
 ```
 
 A file added to `core/` goes into `core/swarm-core-sources.cmake` only: both

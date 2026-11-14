@@ -7,7 +7,8 @@ name: Core
 # ns-3, at the standard ns-3 builds at (C++23 on ns-3.49), so only this check
 # sees what a consumer's C++20 build sees: the strict warnings as errors (in
 # core/CMakeLists.txt), the tests, the same under ASan + UBSan, and core/ used
-# as a library by another CMake project (#100). Formatting and licence headers
+# as a library by another CMake project (#100), as an installed package and as
+# the release tarball by URL (#133). Formatting and licence headers
 # are ci.yml's (`ci / format`, `ci / headers / licence`). The check name is
 # `core`; no `paths:` filter, as a required check runs on every PR.
 on:
@@ -43,5 +44,5 @@ jobs:
           cmake -S core -B build/sanitized -DCMAKE_BUILD_TYPE=Debug -DSWARM_CORE_SANITIZE=ON
           cmake --build build/sanitized -j "$(nproc)"
           ctest --test-dir build/sanitized --output-on-failure
-      - name: core/ as a library in another CMake project
+      - name: core/ as a library in another CMake project, installed as a package, and by release tarball
         run: tools/checks/check-core-consumer.sh build/consumer
