@@ -37,7 +37,9 @@
 #include "ns3/yans-wifi-helper.h"
 
 #include <array>
+#include <algorithm>
 #include <cmath>
+#include <cstring>
 #include <fstream>
 #include <map>
 #include <sstream>
@@ -106,6 +108,8 @@ public:
     /// A relay that holds every transit packet through Defer with a mark on
     /// it, as an adapter overriding RouteInput would (#40).
     bool holdMarked = false;
+    /// The hold class HoldClassFor gives every deferred packet (#126).
+    uint8_t holdClass = 0;
     std::vector<bool> markedFrom;  ///< per data packet seen: did it carry the mark?
     /// OnDataUndelivered (#40): (failed next hop, previous hop) per report; with
     /// `backtrack`, the packet goes back to the previous hop (ARA §3.3).
@@ -172,6 +176,8 @@ protected:
         auto it = routes.find(dst);
         return it == routes.end() ? Ipv4Address() : it->second;
     }
+
+    uint8_t HoldClassFor(Ipv4Address /*dst*/) override { return holdClass; }
 
     void StartDiscovery(Ipv4Address dst) override {
         ++discoveries;
@@ -575,6 +581,445 @@ private:
     }
 };
 
+/// Hold classes (#126): both expiry modes, a class cap shorter than MaxAge,
+/// per-class statistics, overflow across classes, Requeue keeping the first
+/// enqueue time and the class.
+class DeferredQueueClassTestCase : public TestCase {
+public:
+    DeferredQueueClassTestCase()
+        : TestCase("glue: DeferredPacketQueue hold classes, caps, both expiry modes") {}
+
+private:
+    static DeferredPacket Entry(Ipv4Address dst, uint32_t size, uint8_t cls) {
+        DeferredPacket e;
+        e.packet = Create<Packet>(size);
+        e.header.SetDestination(dst);
+        e.ecb = MakeCallback(&CountError);
+        e.holdClass = cls;
+        return e;
+    }
+
+    static std::vector<uint32_t> Sizes(const std::vector<DeferredPacket>& v) {
+        std::vector<uint32_t> out;
+        for (const auto& e : v) {
+            out.push_back(e.packet->GetSize());
+        }
+        return out;
+    }
+
+    void DoRun() override {
+        const Ipv4Address a("10.0.0.1");
+        const Ipv4Address b("10.0.0.2");
+        {
+            // Default mode: MaxAge from the first enqueue; class 1 capped at
+            // 0.2 s, class 2 uncapped.
+            Ptr<DeferredPacketQueue> q = CreateObject<DeferredPacketQueue>();
+            BooleanValue rearm;
+            q->GetAttribute("RearmOnEnqueue", rearm);
+            NS_TEST_EXPECT_MSG_EQ(rearm.Get(), false, "documented default RearmOnEnqueue");
+            NS_TEST_EXPECT_MSG_EQ(q->GetHoldClassCap(1), Time(), "no cap by default");
+            q->SetAttribute("MaxAge", TimeValue(Seconds(1)));
+            q->SetHoldClassCap(1, Seconds(0.2));
+            q->SetHoldClassCap(200, Seconds(5));  // out of range: class 0's
+            NS_TEST_EXPECT_MSG_EQ(q->GetHoldClassCap(0), Seconds(5), "class >= 8 is class 0");
+            q->SetHoldClassCap(0, Time());
+            g_errors = 0;
+            bool hasA = false;
+            bool hasB = false;
+            std::vector<uint32_t> releasedB;
+            uint32_t sizeAfterRequeue = 0;
+            Simulator::Schedule(Seconds(0.1), [&]() {
+                q->Enqueue(Entry(a, 1, 1));  // expires at 0.3 (cap)
+                q->Enqueue(Entry(b, 2, 2));  // expires at 1.1 (MaxAge)
+            });
+            Simulator::Schedule(Seconds(0.25), [&]() {
+                hasA = q->Has(a);
+                // Released and put back: first enqueue kept, so still 0.3.
+                std::vector<DeferredPacket> back = q->Release(a);
+                q->Requeue(std::move(back));
+            });
+            Simulator::Schedule(Seconds(0.35), [&]() {
+                q->Purge();  // a: 0.25 s since its first enqueue > 0.2 s cap
+                // Back again after its cap: dropped at once in this mode.
+                DeferredPacket late = Entry(a, 3, 1);
+                late.enqueued = Seconds(0.1);
+                q->Requeue({late});
+                sizeAfterRequeue = q->Size();
+                hasB = q->Has(b);
+            });
+            Simulator::Schedule(Seconds(0.6), [&]() {
+                std::vector<DeferredPacket> rel = q->Release(b);
+                releasedB = Sizes(rel);
+                for (const auto& e : rel) {
+                    q->NoteForwarded(e);
+                }
+            });
+            Simulator::Run();
+            Simulator::Destroy();
+            const DeferredQueueStats& s = q->Stats();
+            NS_TEST_EXPECT_MSG_EQ(hasA, true, "class 1 waits inside its cap");
+            NS_TEST_EXPECT_MSG_EQ(hasB, true, "class 2 is not capped");
+            NS_TEST_EXPECT_MSG_EQ(sizeAfterRequeue, 1u, "an arrival past its cap is not held");
+            NS_TEST_EXPECT_MSG_EQ((releasedB == std::vector<uint32_t>{2}), true, "b released");
+            NS_TEST_EXPECT_MSG_EQ(s.expired, 2u, "a by its cap at a purge, a late arrival at once");
+            NS_TEST_EXPECT_MSG_EQ(s.byClass[1].dropped, 2u, "both in class 1's account");
+            NS_TEST_EXPECT_MSG_EQ_TOL(s.byClass[1].droppedHoldSumS, 0.5, 1e-9,
+                                      "each held 0.25 s since its first enqueue");
+            NS_TEST_EXPECT_MSG_EQ(s.byClass[2].forwarded, 1u, "class 2 forwarded");
+            NS_TEST_EXPECT_MSG_EQ_TOL(s.byClass[2].forwardedHoldSumS, 0.5, 1e-9, "after 0.5 s");
+            NS_TEST_EXPECT_MSG_EQ_TOL(s.byClass[2].forwardedHoldMaxS, 0.5, 1e-9, "max");
+            NS_TEST_EXPECT_MSG_EQ(s.byClass[0].forwarded + s.byClass[0].dropped, 0u, "class 0");
+            NS_TEST_EXPECT_MSG_EQ(s.enqueued,
+                                  s.released + s.overflow + s.expired + s.discarded + q->Size(),
+                                  "the counts add up");
+            NS_TEST_EXPECT_MSG_EQ(g_errors, 2u, "every drop through the error callback");
+            q->Dispose();
+        }
+        {
+            // RearmOnEnqueue: MaxAge re-armed by Requeue, bounded by the cap;
+            // an expired arrival dropped at once; overflow drops the oldest
+            // whatever its class and accounts it to that class.
+            Ptr<DeferredPacketQueue> q = CreateObject<DeferredPacketQueue>();
+            q->SetAttribute("MaxAge", TimeValue(Seconds(1)));
+            q->SetAttribute("MaxPackets", UintegerValue(3));
+            q->SetAttribute("RearmOnEnqueue", BooleanValue(true));
+            q->SetHoldClassCap(1, Seconds(1.5));
+            g_errors = 0;
+            bool hasAt14 = false;
+            bool hasBAt17 = false;
+            uint32_t sizeLate = 0;
+            uint32_t sizeAfterPurge = 0;
+            std::vector<uint32_t> dropped;
+            q->TraceConnectWithoutContext(
+                "Drop", MakeBoundCallback(
+                            +[](std::vector<uint32_t>* out, Ptr<const Packet> p, const Ipv4Header&,
+                                DeferredDropReason) { out->push_back(p->GetSize()); },
+                            &dropped));
+            Simulator::Schedule(Seconds(0.1), [&]() {
+                q->Enqueue(Entry(a, 1, 1));  // capped at 1.6
+                q->Enqueue(Entry(b, 2, 0));  // MaxAge, re-armed
+            });
+            Simulator::Schedule(Seconds(0.9), [&]() {
+                q->Requeue(q->Release(a));  // re-armed to 1.9, capped at 1.6
+                q->Requeue(q->Release(b));  // re-armed to 1.9
+            });
+            Simulator::Schedule(Seconds(1.4), [&]() { hasAt14 = q->Has(a); });
+            Simulator::Schedule(Seconds(1.7), [&]() {
+                // a went at its cap (1.6), as this Requeue's purge finds; b,
+                // re-armed, still waits; a late class-1 arrival past its cap
+                // is dropped at once.
+                DeferredPacket late = Entry(a, 3, 1);
+                late.enqueued = Seconds(0.1);
+                q->Requeue({late});
+                sizeLate = q->Size();
+                hasBAt17 = q->Has(b);
+                q->Purge();
+                sizeAfterPurge = q->Size();
+                // Overflow: b (class 0) is the oldest and goes for room.
+                q->Enqueue(Entry(a, 4, 2));
+                q->Enqueue(Entry(a, 5, 2));
+                q->Enqueue(Entry(a, 6, 2));
+            });
+            Simulator::Run();
+            Simulator::Destroy();
+            const DeferredQueueStats& s = q->Stats();
+            NS_TEST_EXPECT_MSG_EQ(hasAt14, true, "a, re-armed at 0.9, waits past 0.1 + MaxAge");
+            NS_TEST_EXPECT_MSG_EQ(hasBAt17, true, "b, re-armed at 0.9, waits until 1.9");
+            NS_TEST_EXPECT_MSG_EQ(sizeLate, 1u, "an arrival past its cap is not held");
+            NS_TEST_EXPECT_MSG_EQ(sizeAfterPurge, 1u, "b alone waits");
+            NS_TEST_EXPECT_MSG_EQ((dropped == std::vector<uint32_t>{1, 3, 2}), true,
+                                  "drop order: a at its cap, the late arrival, b for room");
+            NS_TEST_EXPECT_MSG_EQ(s.overflow, 1u, "one overflow");
+            NS_TEST_EXPECT_MSG_EQ(s.byClass[1].dropped, 2u, "class 1: two expired");
+            NS_TEST_EXPECT_MSG_EQ_TOL(s.byClass[1].droppedHoldSumS, 3.2, 1e-9,
+                                      "1.6 s each since the first enqueue");
+            NS_TEST_EXPECT_MSG_EQ(s.byClass[0].dropped, 1u, "class 0: b's overflow");
+            NS_TEST_EXPECT_MSG_EQ_TOL(s.byClass[0].droppedHoldSumS, 1.6, 1e-9, "held 1.6 s");
+            NS_TEST_EXPECT_MSG_EQ(q->Size(), 3u, "the three class-2 packets wait");
+            NS_TEST_EXPECT_MSG_EQ(g_errors, 3u, "every drop through the error callback");
+            q->Dispose();
+        }
+    }
+};
+
+/// AntHocNet's RequestQueue (swarm-routing/AntHocNet
+/// ns3/anthocnet/model/anthocnet-rqueue.{h,cc} @ 7c3aaf8, GPL-2.0-only),
+/// kept here as written there, as the reference #126's configuration must
+/// reproduce: per-reason hold caps, QueueTimeout re-armed at each enqueue,
+/// drop-oldest, per-reason delivered/dropped accounting.
+class AhnRequestQueue {
+public:
+    static constexpr uint8_t kHoldReasons = 3;
+    struct HoldStats {
+        uint64_t deliveredCount[kHoldReasons] = {0, 0, 0};
+        double deliveredSumS[kHoldReasons] = {0.0, 0.0, 0.0};
+        double deliveredMaxS[kHoldReasons] = {0.0, 0.0, 0.0};
+        uint64_t droppedCount[kHoldReasons] = {0, 0, 0};
+        double droppedSumS[kHoldReasons] = {0.0, 0.0, 0.0};
+    };
+    struct QueueEntry {
+        Ptr<const Packet> packet;
+        Ipv4Header header;
+        Ipv4RoutingProtocol::ErrorCallback ecb;
+        Time expire;
+        Time enqueueFirst;
+        uint8_t holdReason = 0;
+    };
+
+    AhnRequestQueue(uint32_t maxLen, Time timeout) : m_maxLen(maxLen), m_timeout(timeout) {}
+    void SetHoldCap(uint8_t reason, Time cap) {
+        if (reason < kHoldReasons) m_holdCap[reason] = cap;
+    }
+
+    bool Enqueue(QueueEntry& entry) {
+        Purge();
+        if (entry.enqueueFirst.IsZero()) entry.enqueueFirst = Simulator::Now();
+        Time expire = Simulator::Now() + m_timeout;
+        const Time cap = (entry.holdReason < kHoldReasons) ? m_holdCap[entry.holdReason] : Time();
+        if (!cap.IsZero()) {
+            const Time capped = entry.enqueueFirst + cap;
+            if (capped < expire) expire = capped;
+        }
+        entry.expire = expire;
+        if (m_queue.size() >= m_maxLen) {
+            const QueueEntry old = m_queue.front();
+            m_queue.erase(m_queue.begin());
+            const uint8_t r = old.holdReason < kHoldReasons ? old.holdReason : 0;
+            m_stats.droppedCount[r] += 1;
+            m_stats.droppedSumS[r] += (Simulator::Now() - old.enqueueFirst).GetSeconds();
+            if (!old.ecb.IsNull()) {
+                old.ecb(old.packet, old.header, Socket::ERROR_NOROUTETOHOST);
+            }
+        }
+        m_queue.push_back(entry);
+        return true;
+    }
+
+    void DequeueAll(Ipv4Address dst, std::vector<QueueEntry>& out) {
+        Purge();
+        auto first = std::find_if(m_queue.begin(), m_queue.end(), [&dst](const QueueEntry& e) {
+            return e.header.GetDestination() == dst;
+        });
+        if (first == m_queue.end()) return;
+        auto kept = first;
+        for (auto it = first; it != m_queue.end(); ++it) {
+            if (it->header.GetDestination() == dst) {
+                out.push_back(std::move(*it));
+            } else {
+                *kept++ = std::move(*it);
+            }
+        }
+        m_queue.erase(kept, m_queue.end());
+    }
+
+    void Purge() {
+        const Time now = Simulator::Now();
+        auto first = std::find_if(m_queue.begin(), m_queue.end(),
+                                  [&now](const QueueEntry& e) { return !(e.expire > now); });
+        if (first == m_queue.end()) return;
+        std::vector<QueueEntry> expired;
+        auto kept = first;
+        for (auto it = first; it != m_queue.end(); ++it) {
+            if (it->expire > now) {
+                *kept++ = std::move(*it);
+            } else {
+                expired.push_back(std::move(*it));
+            }
+        }
+        m_queue.erase(kept, m_queue.end());
+        for (QueueEntry& e : expired) {
+            const uint8_t r = e.holdReason < kHoldReasons ? e.holdReason : 0;
+            m_stats.droppedCount[r] += 1;
+            m_stats.droppedSumS[r] += (now - e.enqueueFirst).GetSeconds();
+            if (!e.ecb.IsNull()) {
+                e.ecb(e.packet, e.header, Socket::ERROR_NOROUTETOHOST);
+            }
+        }
+    }
+
+    std::vector<Ipv4Address> PendingDestinations() {
+        Purge();
+        std::vector<Ipv4Address> dests;
+        for (const QueueEntry& e : m_queue) {
+            const Ipv4Address d = e.header.GetDestination();
+            if (std::find(dests.begin(), dests.end(), d) == dests.end()) {
+                dests.push_back(d);
+            }
+        }
+        return dests;
+    }
+
+    void NoteDelivered(const QueueEntry& e) {
+        const uint8_t r = e.holdReason < kHoldReasons ? e.holdReason : 0;
+        const double hold = (Simulator::Now() - e.enqueueFirst).GetSeconds();
+        m_stats.deliveredCount[r] += 1;
+        m_stats.deliveredSumS[r] += hold;
+        if (hold > m_stats.deliveredMaxS[r]) m_stats.deliveredMaxS[r] = hold;
+    }
+
+    uint32_t Size() {
+        Purge();
+        return static_cast<uint32_t>(m_queue.size());
+    }
+    const HoldStats& Stats() const { return m_stats; }
+
+private:
+    std::vector<QueueEntry> m_queue;
+    uint32_t m_maxLen;
+    Time m_timeout;
+    Time m_holdCap[kHoldReasons] = {Time(), Time(), Time()};
+    HoldStats m_stats;
+};
+
+/// #126's acceptance: DeferredPacketQueue, configured as AntHocNet configures
+/// its RequestQueue (MaxAge = QueueTimeout 3 s, RearmOnEnqueue, class 1 =
+/// RECONV capped at ReconvHoldCap 0.2 s, class 2 = REPAIR uncapped), driven
+/// by the same seeded script of enqueues, flushes that re-queue or deliver,
+/// purges, pending-destination reads and overflows at the same instants,
+/// gives the same error-callback sequence (packet and instant), the same
+/// pending destinations and the same per-class statistics, bit for bit.
+class DeferredQueueAntHocNetTestCase : public TestCase {
+public:
+    DeferredQueueAntHocNetTestCase()
+        : TestCase("glue: DeferredPacketQueue replays AntHocNet's RequestQueue (#126)") {}
+
+private:
+    struct Log {
+        std::vector<std::pair<uint64_t, int64_t>> errors;  // (packet uid, ns)
+        std::vector<std::vector<Ipv4Address>> pending;
+        std::vector<uint32_t> sizes;
+    };
+
+    static void Record(Log* log, Ptr<const Packet> p, const Ipv4Header&, Socket::SocketErrno) {
+        log->errors.emplace_back(p->GetUid(), Simulator::Now().GetNanoSeconds());
+    }
+
+    static bool SameBits(double x, double y) {
+        uint64_t a = 0;
+        uint64_t b = 0;
+        std::memcpy(&a, &x, sizeof a);
+        std::memcpy(&b, &y, sizeof b);
+        return a == b;
+    }
+
+    void DoRun() override {
+        constexpr uint32_t kMaxLen = 6;
+        AhnRequestQueue ahn(kMaxLen, Seconds(3));
+        ahn.SetHoldCap(1, Seconds(0.2));  // ReconvHoldCap, its default
+        ahn.SetHoldCap(2, Seconds(0));    // RepairHoldCap, its default (off)
+        Ptr<DeferredPacketQueue> q = CreateObject<DeferredPacketQueue>();
+        q->SetAttribute("MaxPackets", UintegerValue(kMaxLen));
+        q->SetAttribute("MaxAge", TimeValue(Seconds(3)));
+        q->SetAttribute("RearmOnEnqueue", BooleanValue(true));
+        q->SetHoldClassCap(1, Seconds(0.2));
+        q->SetHoldClassCap(2, Seconds(0));
+        Log la;
+        Log lq;
+        const std::array<Ipv4Address, 3> dsts{Ipv4Address("10.0.0.1"), Ipv4Address("10.0.0.2"),
+                                              Ipv4Address("10.0.0.3")};
+        // A fixed LCG, so the script is the same on every platform.
+        uint64_t state = 126;
+        auto draw = [&state](uint32_t n) {
+            state = state * 6364136223846793005ull + 1442695040888963407ull;
+            return static_cast<uint32_t>((state >> 33) % n);
+        };
+        for (int step = 1; step <= 3000; ++step) {
+            const Time at = MilliSeconds(10 * step + draw(10));
+            const uint32_t op = draw(10);
+            const Ipv4Address dst = dsts[draw(3)];
+            const uint8_t reason = static_cast<uint8_t>(draw(3));
+            const uint32_t size = 10 + draw(1000);
+            Simulator::Schedule(at, [&, op, dst, reason, size]() {
+                switch (op) {
+                case 0:
+                case 1:
+                case 2:
+                case 3: {  // DeferredRouteOutput / NotifyTxError's re-injection
+                    Ptr<const Packet> p = Create<Packet>(size);
+                    Ipv4Header h;
+                    h.SetDestination(dst);
+                    AhnRequestQueue::QueueEntry ae;
+                    ae.packet = p;
+                    ae.header = h;
+                    ae.ecb = MakeBoundCallback(&Record, &la);
+                    ae.holdReason = reason;
+                    ahn.Enqueue(ae);
+                    DeferredPacket de;
+                    de.packet = p;
+                    de.header = h;
+                    de.ecb = MakeBoundCallback(&Record, &lq);
+                    de.holdClass = reason;
+                    q->Enqueue(de);
+                    break;
+                }
+                case 4:
+                case 5: {  // FlushQueue, the route vanished again: re-queue
+                    std::vector<AhnRequestQueue::QueueEntry> pending;
+                    ahn.DequeueAll(dst, pending);
+                    for (auto& e : pending) {
+                        ahn.Enqueue(e);
+                    }
+                    q->Requeue(q->Release(dst));
+                    break;
+                }
+                case 6: {  // FlushQueue with a route: deliver
+                    std::vector<AhnRequestQueue::QueueEntry> pending;
+                    ahn.DequeueAll(dst, pending);
+                    for (const auto& e : pending) {
+                        ahn.NoteDelivered(e);
+                    }
+                    for (const auto& e : q->Release(dst)) {
+                        q->NoteForwarded(e);
+                    }
+                    break;
+                }
+                case 7: {  // ReactiveRetryTimerExpire
+                    la.pending.push_back(ahn.PendingDestinations());
+                    q->Purge();
+                    lq.pending.push_back(q->Destinations());
+                    break;
+                }
+                case 8: {  // Size (purges in AntHocNet)
+                    la.sizes.push_back(ahn.Size());
+                    q->Purge();
+                    lq.sizes.push_back(q->Size());
+                    break;
+                }
+                default:
+                    ahn.Purge();
+                    q->Purge();
+                }
+            });
+        }
+        Simulator::Run();
+        Simulator::Destroy();
+
+        NS_TEST_EXPECT_MSG_GT(la.errors.size(), 100u, "the script drops enough to compare");
+        NS_TEST_EXPECT_MSG_EQ((la.errors == lq.errors), true,
+                              "the same packets dropped, in the same order, at the same instants");
+        NS_TEST_EXPECT_MSG_EQ((la.pending == lq.pending), true, "the same pending destinations");
+        NS_TEST_EXPECT_MSG_EQ((la.sizes == lq.sizes), true, "the same queue sizes");
+        const auto& as = ahn.Stats();
+        const DeferredQueueStats& qs = q->Stats();
+        bool same = true;
+        uint64_t delivered = 0;
+        for (uint8_t r = 0; r < AhnRequestQueue::kHoldReasons; ++r) {
+            const DeferredClassStats& c = qs.byClass[r];
+            delivered += c.forwarded;
+            same = same && as.deliveredCount[r] == c.forwarded &&
+                   SameBits(as.deliveredSumS[r], c.forwardedHoldSumS) &&
+                   SameBits(as.deliveredMaxS[r], c.forwardedHoldMaxS) &&
+                   as.droppedCount[r] == c.dropped &&
+                   SameBits(as.droppedSumS[r], c.droppedHoldSumS);
+        }
+        NS_TEST_EXPECT_MSG_GT(delivered, 100u, "the script delivers enough to compare");
+        NS_TEST_EXPECT_MSG_GT(qs.byClass[1].dropped, 0u, "the RECONV cap fired");
+        NS_TEST_EXPECT_MSG_GT(qs.overflow, 0u, "the queue overflowed");
+        NS_TEST_EXPECT_MSG_EQ(same, true, "per-class statistics bit for bit");
+        q->Dispose();
+    }
+};
+
 /// The cached ports see a monitor aggregated after the first read (#46).
 class PortCacheTestCase : public TestCase {
 public:
@@ -955,6 +1400,7 @@ private:
         Toy(n0)->routes[n2a] = n1a;
         Toy(n1)->pending[n2a] = n2a;  // learned 0.5 s after the relay's discovery
         Toy(n1)->holdMarked = true;
+        Toy(n1)->holdClass = 3;  // HoldClassFor reaches Defer (#126)
 
         std::vector<std::string> rx;
         Ptr<Socket> sink = Sink(n2, &rx);
@@ -967,6 +1413,11 @@ private:
         NS_TEST_EXPECT_MSG_EQ(q->Stats().enqueued, 1u, "the relay held the packet");
         NS_TEST_EXPECT_MSG_EQ(q->Stats().released, 1u, "and released it");
         NS_TEST_EXPECT_MSG_EQ(Toy(n1)->discoveries, 1u, "Defer started the relay's discovery");
+        const DeferredClassStats& c3 = q->Stats().byClass[3];
+        NS_TEST_EXPECT_MSG_EQ(c3.forwarded, 1u, "held in HoldClassFor's class, forwarded");
+        NS_TEST_EXPECT_MSG_EQ_TOL(c3.forwardedHoldSumS, 0.5, 1e-6,
+                                  "its hold, until the relay's discovery answered");
+        NS_TEST_EXPECT_MSG_EQ(q->Stats().byClass[0].forwarded, 0u, "nothing in class 0");
         NS_TEST_EXPECT_MSG_EQ(rx.size(), 1u, "the held packet reached the destination");
         NS_TEST_ASSERT_MSG_EQ(Toy(n2)->markedFrom.size(), 1u, "n2 saw the data packet");
         NS_TEST_EXPECT_MSG_EQ(Toy(n2)->markedFrom[0], true,
@@ -1877,6 +2328,8 @@ std::vector<TestCase*> MakeGlueTestCases() {
     return {new PortsTestCase,
             new DeferredQueueTestCase,
             new DeferredQueueOrderTestCase,
+            new DeferredQueueClassTestCase,
+            new DeferredQueueAntHocNetTestCase,
             new PortCacheTestCase,
             new CancellableTimerTestCase,
             new WireBufferTestCase,
