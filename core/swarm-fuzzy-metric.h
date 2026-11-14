@@ -67,7 +67,9 @@ struct FuzzyMemberships {
 /// guarantees low < high, both finite, and x not NaN (+-inf are fine).
 inline FuzzyMemberships fuzzyMemberships(double x, double low, double high) {
     FuzzyMemberships m;
-    const double mid = low + (high - low) / 2.0;
+    // Halves first: high - low can overflow for finite breakpoints of
+    // opposite sign; low < x < high keeps every difference below finite.
+    const double mid = low / 2.0 + high / 2.0;
     if (x <= low) {
         m.low = 1.0;
     } else if (x >= high) {

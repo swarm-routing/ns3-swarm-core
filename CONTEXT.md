@@ -35,7 +35,7 @@ same failure for every arm. The energy-aware link metric (#2):
 `EnergyMetric` (`core/swarm-energy-metric.h`), AntHocNet's `energy` metric
 bit for bit, each relay pricing its own hop at 1 / residual energy. The fuzzy
 composite link metric (#3): `FuzzyMetric` (`core/swarm-fuzzy-metric.h`), a
-nine-rule delay x stability table whose quality divides inverse hop count,
+nine-rule delay x stability table whose quality is divided by hop count,
 with `LinkObservation::stability` as its new input; every breakpoint and rule
 is a repo choice.
 

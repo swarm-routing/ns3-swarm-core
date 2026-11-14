@@ -69,6 +69,19 @@ void TestFuzzyMemberships(Checker& c) {
                   m.medium <= 1.0 && m.high <= 1.0;
     }
     c.check(unity && inRange, "degrees in [0, 1], summing to 1");
+    // Breakpoints whose span overflows a double stay finite.
+    const FuzzyMemberships wide = fuzzyMemberships(1.0, -1e308, 1e308);
+    c.check(std::isfinite(wide.low) && std::isfinite(wide.medium) && std::isfinite(wide.high) &&
+                near(wide.low + wide.medium + wide.high, 1.0),
+            "a span past the double range: finite degrees summing to 1");
+    FuzzyMetricParams widest;
+    widest.stabilityLow = -1e308;
+    widest.stabilityHigh = 1e308;
+    LinkObservation o;
+    o.hops = 2.0;
+    o.stability = 1.0;
+    const double q = FuzzyMetric(widest).quality(o);
+    c.check(std::isfinite(q) && q >= 0.0 && q <= 1.0, "and the quality stays bounded");
     const FuzzyMemberships m = fuzzyMemberships(1.5, 1.0, 3.0);
     c.check(m[FuzzyTerm::Low] == m.low && m[FuzzyTerm::Medium] == m.medium &&
                 m[FuzzyTerm::High] == m.high,
