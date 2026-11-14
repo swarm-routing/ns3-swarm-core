@@ -57,6 +57,7 @@
 #include "ns3/traced-callback.h"
 
 #include <cstdint>
+#include <map>
 #include <span>
 #include <string>
 #include <utility>
@@ -301,6 +302,30 @@ protected:
     void Defer(Ptr<const Packet> p, const Ipv4Header& header, const UnicastForwardCallback& ucb,
                const ErrorCallback& ecb);
 
+    /// The peer map (#127): reach a neighbour the protocol names by its
+    /// canonical address (one address per node, usually on no subnet this
+    /// node is attached to: a multi-interface node, an ISL grid) through
+    /// IPv4 interface `interface`, at `linkAddress`, its address on that
+    /// link. AntHocNet's peer routes (its #203, #260), filled from its hello.
+    ///
+    /// Every next hop the base sends to (ForwardData, released deferred
+    /// packets, ResendData, UnicastControl, RouteOutput's routes) resolves
+    /// as AntHocNet's ResolveNextHop: (1) a directly attached subnet, through
+    /// that interface, the next hop itself the gateway; else (2) the peer
+    /// map, through its interface (when the node has it), `linkAddress` the
+    /// gateway; a control message goes to `linkAddress`; else (3) the first
+    /// interface, the next hop the gateway. A single-interface topology
+    /// takes (1), so an empty map changes nothing.
+    ///
+    /// One entry per canonical address and per (interface, link address):
+    /// setting a pair another canonical address holds moves it. At most
+    /// MaxPeerRoutes entries (golden rule 7): a new one beyond it is
+    /// refused (false). Entries outlive an interface going down, as
+    /// AntHocNet's do, and are cleared at shutdown and crash (#43);
+    /// ClearPeerRoute removes one.
+    bool SetPeerRoute(Ipv4Address canonical, uint32_t interface, Ipv4Address linkAddress);
+    void ClearPeerRoute(Ipv4Address canonical);
+
     /// Carries out the decisions a core returns that need no data packet in
     /// hand: Unicast and Broadcast of a control message (`encode` turns the
     /// core's message into the packet the protocol sends) and DiscardPending.
@@ -356,12 +381,18 @@ protected:
 
 private:
     Ptr<Node> NodeOf() const;
+    /// Where a packet to next hop `next` leaves: the interface (-1 when the
+    /// node has none up) and the gateway (#127, SetPeerRoute).
+    struct NextHopRoute {
+        int32_t ifIdx = -1;
+        Ipv4Address gateway;
+    };
     Ptr<Ipv4Route> LoopbackRoute(const Ipv4Header& header, Ptr<NetDevice> oif) const;
     Ptr<Ipv4Route> DirectRoute(Ipv4Address dst, Ipv4Address next, Ipv4Address src) const;
-    /// The same, through interface `ifIdx` (InterfaceTowards(next)).
-    Ptr<Ipv4Route> DirectRoute(Ipv4Address dst, Ipv4Address next, Ipv4Address src,
-                               int32_t ifIdx) const;
+    /// The same, through a resolved next hop (ResolveNextHop).
+    Ptr<Ipv4Route> DirectRoute(Ipv4Address dst, Ipv4Address src, const NextHopRoute& hop) const;
     void RefreshPorts() const;
+    NextHopRoute ResolveNextHop(Ipv4Address next) const;
     int32_t InterfaceTowards(Ipv4Address next) const;
     void PurgeTick();
     void RecvSocket(Ptr<Socket> socket);
@@ -434,6 +465,13 @@ private:
     EventId m_announceEvent;
     bool m_initialized = false;   ///< DoInitialize ran
     bool m_islConnected = false;  ///< ConnectIslMonitor connected one
+    /// The peer map (#127): canonical address -> interface and link address.
+    struct PeerRoute {
+        uint32_t iface = 0;
+        Ipv4Address link;
+    };
+    std::map<Ipv4Address, PeerRoute> m_peerRoutes;  ///< ordered: deterministic (org rule 5)
+    uint32_t m_maxPeerRoutes = 1024;                ///< MaxPeerRoutes
     TracedCallback<SwarmNodeState, SwarmLifecycleOp> m_lifecycle;
     /// The cached ports (raw: they live in the node's aggregate, which holds
     /// this protocol too; dropped at dispose).
