@@ -17,8 +17,22 @@
 # SWARM_CORE_BENCH=ON adds the microbenchmarks (bench/, dev-only: Google
 # Benchmark fetched at a pinned commit, checked by its hash; nothing shipped
 # links it).
+# SWARM_CORE_INSTALL adds the install rules: the library, the headers under
+# include/swarm-core/ and the CMake package swarm-core (#133), so
+# `find_package(swarm-core CONFIG REQUIRED)` gives the imported target
+# swarm::core. ON at the top level, OFF in someone else's build, so their
+# `cmake --install` installs nothing of ours unless they ask for it.
 cmake_minimum_required(VERSION 3.20)
-project(swarm_core LANGUAGES CXX)
+
+# The package version is the repository's VERSION (one level up, in a checkout
+# and in the release tarball); SWARM_CORE_VERSION when core/ is used without it.
+if(EXISTS "${CMAKE_CURRENT_LIST_DIR}/../VERSION")
+  file(STRINGS "${CMAKE_CURRENT_LIST_DIR}/../VERSION" _swarm_core_version LIMIT_COUNT 1)
+else()
+  set(SWARM_CORE_VERSION "0.0.0" CACHE STRING "swarm-core's version when ../VERSION is absent")
+  set(_swarm_core_version "${SWARM_CORE_VERSION}")
+endif()
+project(swarm_core VERSION ${_swarm_core_version} LANGUAGES CXX)
 
 set(CMAKE_CXX_STANDARD 20)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
@@ -34,6 +48,7 @@ endif()
 option(SWARM_CORE_TESTS "Build the tests and register them with ctest" ${SWARM_CORE_TOP_LEVEL})
 option(SWARM_CORE_SANITIZE "Build with AddressSanitizer and UndefinedBehaviorSanitizer" OFF)
 option(SWARM_CORE_BENCH "Build the microbenchmarks (fetches Google Benchmark)" OFF)
+option(SWARM_CORE_INSTALL "Add the install rules and the CMake package swarm-core" ${SWARM_CORE_TOP_LEVEL})
 # The strict warnings the ns-3 CI applies to this module (ns3-containers'
 # swarm-quality.cmake), so a local build catches what CI would.
 set(SWARM_CORE_WARNINGS -Wall -Wextra -Wpedantic -Wshadow -Wnon-virtual-dtor -Wold-style-cast
@@ -51,7 +66,13 @@ include(${CMAKE_CURRENT_LIST_DIR}/swarm-core-sources.cmake)
 
 add_library(swarm_core STATIC ${SWARM_CORE_SOURCES})
 add_library(swarm::core ALIAS swarm_core)
-target_include_directories(swarm_core PUBLIC ${CMAKE_CURRENT_SOURCE_DIR})
+# The imported target of the installed package is swarm::core too (EXPORT_NAME
+# and the export's NAMESPACE), the same name a subproject's alias gives.
+set_target_properties(swarm_core PROPERTIES EXPORT_NAME core)
+include(GNUInstallDirs)
+target_include_directories(swarm_core PUBLIC
+  $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}>
+  $<INSTALL_INTERFACE:${CMAKE_INSTALL_INCLUDEDIR}/swarm-core>)
 # A consumer's targets that link this one compile at C++20 or later.
 target_compile_features(swarm_core PUBLIC cxx_std_20)
 if(SWARM_CORE_SANITIZE)
@@ -64,6 +85,36 @@ if(NOT SWARM_CORE_TOP_LEVEL)
   # In someone else's build: our warnings on our own sources only, and not as
   # errors (their compiler may know warnings ours does not).
   target_compile_options(swarm_core PRIVATE ${SWARM_CORE_WARNINGS})
+endif()
+
+if(SWARM_CORE_INSTALL)
+  include(CMakePackageConfigHelpers)
+  set(SWARM_CORE_CMAKE_DIR ${CMAKE_INSTALL_LIBDIR}/cmake/swarm-core)
+  install(TARGETS swarm_core EXPORT swarm-coreTargets
+          ARCHIVE DESTINATION ${CMAKE_INSTALL_LIBDIR}
+          LIBRARY DESTINATION ${CMAKE_INSTALL_LIBDIR})
+  install(FILES ${SWARM_CORE_HEADERS} DESTINATION ${CMAKE_INSTALL_INCLUDEDIR}/swarm-core)
+  # testbench/swarm-testbench.h includes "../swarm-ports.h": the same layout.
+  install(FILES ${SWARM_CORE_TESTBENCH_HEADERS}
+          DESTINATION ${CMAKE_INSTALL_INCLUDEDIR}/swarm-core/testbench)
+  install(FILES LICENSE DESTINATION ${CMAKE_INSTALL_DATADIR}/doc/swarm-core)
+  install(EXPORT swarm-coreTargets NAMESPACE swarm:: DESTINATION ${SWARM_CORE_CMAKE_DIR})
+  configure_package_config_file(swarm-coreConfig.cmake.in
+    ${CMAKE_CURRENT_BINARY_DIR}/swarm-coreConfig.cmake
+    INSTALL_DESTINATION ${SWARM_CORE_CMAKE_DIR})
+  # SemVer read against docs/api-policy.md: from 1.0 a release is compatible
+  # with every earlier one of its major; before 1.0 any minor may break, so a
+  # 0.y release satisfies a request for 0.y only.
+  if(PROJECT_VERSION_MAJOR EQUAL 0)
+    set(_swarm_core_compat SameMinorVersion)
+  else()
+    set(_swarm_core_compat SameMajorVersion)
+  endif()
+  write_basic_package_version_file(${CMAKE_CURRENT_BINARY_DIR}/swarm-coreConfigVersion.cmake
+    COMPATIBILITY ${_swarm_core_compat})
+  install(FILES ${CMAKE_CURRENT_BINARY_DIR}/swarm-coreConfig.cmake
+                ${CMAKE_CURRENT_BINARY_DIR}/swarm-coreConfigVersion.cmake
+          DESTINATION ${SWARM_CORE_CMAKE_DIR})
 endif()
 
 if(SWARM_CORE_TESTS)

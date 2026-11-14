@@ -19,7 +19,9 @@
 # not work (the workflow stops before signing or tagging on a non-zero exit):
 # the tarball, unpacked into a clean ns3-dev tree's contrib/, builds with
 # strict warnings and passes `test.py -s swarm-core`, and its core/ builds
-# alone (plain CMake, no ns-3) and passes ctest (docker; NS3_IMAGE).
+# alone (plain CMake, no ns-3), passes ctest, installs as the CMake package
+# swarm-core, and a scratch consumer finds it with find_package and passes
+# (#133; docker; NS3_IMAGE).
 # DIST_CHECK=0 skips the check (a quick local build).
 set -euo pipefail
 ver=${1:?usage: dist.sh VERSION OUT-DIR}
@@ -57,6 +59,13 @@ includes "ns3/swarm-core-module.h". core/ alone, with no ns-3:
 
   cmake -S swarm-core/core -B build && cmake --build build && ctest --test-dir build
 
+and installed as the CMake package swarm-core, for find_package:
+
+  cmake --install build --prefix /path/to/prefix
+  # in your project, with CMAKE_PREFIX_PATH=/path/to/prefix:
+  #   find_package(swarm-core $ver CONFIG REQUIRED)
+  #   target_link_libraries(my_core PUBLIC swarm::core)
+
 Source: https://github.com/swarm-routing/ns3-swarm-core/tree/v$ver
 TXT
 tar --sort=name --owner=0 --group=0 --numeric-owner --mtime="@${epoch}" \
@@ -72,5 +81,10 @@ docker run --rm -v "$tmp/contrib:/contrib:ro" "$NS3_IMAGE" bash -euo pipefail -c
     ns3-build-contrib --strict-warnings --test swarm-core=/contrib/swarm-core
     cmake -S /contrib/swarm-core/core -B /tmp/core-build
     cmake --build /tmp/core-build -j "$(nproc)"
-    ctest --test-dir /tmp/core-build --output-on-failure'
-echo "dist.sh: swarm-core-$ver.tar.gz builds in $NS3_IMAGE, passes test.py -s swarm-core, and its core/ passes ctest alone"
+    ctest --test-dir /tmp/core-build --output-on-failure
+    cmake --install /tmp/core-build --prefix /tmp/core-prefix
+    cmake -S /contrib/swarm-core/core/test/consumer-package -B /tmp/core-consumer \
+        -DCMAKE_PREFIX_PATH=/tmp/core-prefix -DSWARM_CORE_WANT="$1"
+    cmake --build /tmp/core-consumer -j "$(nproc)"
+    ctest --test-dir /tmp/core-consumer --output-on-failure' _ "$ver"
+echo "dist.sh: swarm-core-$ver.tar.gz builds in $NS3_IMAGE, passes test.py -s swarm-core, its core/ passes ctest alone, and installs as a package find_package(swarm-core $ver) finds"

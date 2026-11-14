@@ -65,6 +65,51 @@ no edit on your side. The pin must be a commit that has
 does exactly this is built on every PR (`core/test/consumer/`,
 `tools/checks/check-core-consumer.sh`).
 
+### As a released package
+
+`core/` also installs as the CMake package `swarm-core` (#133): the static
+library, the headers under `include/swarm-core/` (`testbench/` included) and
+`lib/cmake/swarm-core/`, whose imported target is `swarm::core` as above.
+
+```bash
+cmake -S core -B build/core -DSWARM_CORE_TESTS=OFF && cmake --build build/core
+cmake --install build/core --prefix /path/to/prefix
+```
+
+```cmake
+find_package(swarm-core CONFIG REQUIRED)   # with CMAKE_PREFIX_PATH=/path/to/prefix
+target_link_libraries(my_protocol_core PUBLIC swarm::core)
+```
+
+`find_package(swarm-core <major>.<minor> CONFIG REQUIRED)` also checks the
+installed version against the one you need:
+
+the package version is the repository's `VERSION`. From 1.0 a release
+satisfies a request for any earlier version of its major (`SameMajorVersion`);
+before 1.0 any minor may break the API ([docs/api-policy.md](docs/api-policy.md)),
+so a 0.y release satisfies a request for 0.y only (`SameMinorVersion`). A
+subproject (above) installs nothing unless it sets `SWARM_CORE_INSTALL=ON`.
+
+The release asset `swarm-core-<ver>.tar.gz` can be fetched the same way, by
+URL and its SHA256 from the release's `SHA256SUMS`, with no git and no commit
+pin (the tarball's single top directory `swarm-core/` is stripped, so the
+subdirectory is `core`):
+
+```cmake
+FetchContent_Declare(swarm_core
+  URL https://github.com/swarm-routing/ns3-swarm-core/releases/download/v<ver>/swarm-core-<ver>.tar.gz
+  URL_HASH SHA256=<the tarball's line in the release's SHA256SUMS>
+  SOURCE_SUBDIR core)   # add DOWNLOAD_EXTRACT_TIMESTAMP TRUE on CMake 3.24+
+FetchContent_MakeAvailable(swarm_core)
+```
+
+That form needs a release with the `swarm::core` target (after v0.2.0); the
+release lock that protocol repositories will pin it with is #134. The check
+script builds both forms on every PR (`core/test/consumer-package/`: an
+install found by `find_package`, its version rule, and a `dist.sh` tarball by
+URL + `URL_HASH`), and the release's `make dist` check builds the
+`find_package` form against the tarball it ships.
+
 ## Test a protocol core without a simulator
 
 `core/testbench/swarm-testbench.h` is a discrete-event testbench for a
