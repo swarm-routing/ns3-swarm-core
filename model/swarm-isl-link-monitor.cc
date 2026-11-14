@@ -7,6 +7,7 @@
 
 #include "swarm-ns3-ports.h"
 
+#include "ns3/boolean.h"
 #include "ns3/double.h"
 #include "ns3/ipv4.h"
 #include "ns3/log.h"
@@ -31,13 +32,25 @@ TypeId IslLinkMonitor::GetTypeId() {
                           "(0.9, AntHocNet's MacServiceAlpha).",
                           DoubleValue(0.9), MakeDoubleAccessor(&IslLinkMonitor::m_alpha),
                           MakeDoubleChecker<double>(0.0, 1.0))
+            .AddAttribute("TrustAfterFailure",
+                          "Whether a link that has gone down once still gives its "
+                          "interface's neighbour set from link state alone (false: "
+                          "hello comes back on it, the ISL seam gate of #4).",
+                          BooleanValue(false),
+                          MakeBooleanAccessor(&IslLinkMonitor::m_trustAfterFailure),
+                          MakeBooleanChecker())
             .AddTraceSource("LinkChange", "A point-to-point link went up or down (peer IP, up).",
                             MakeTraceSourceAccessor(&IslLinkMonitor::m_linkChangeTrace),
+                            "ns3::IslLinkMonitor::LinkChangeCallback")
+            .AddTraceSource("PeerLinkChange",
+                            "The far end of a point-to-point link took its interface down or "
+                            "up (peer IP, up): the carrier this end sees (#4).",
+                            MakeTraceSourceAccessor(&IslLinkMonitor::m_peerLinkChangeTrace),
                             "ns3::IslLinkMonitor::LinkChangeCallback");
     return tid;
 }
 
-IslLinkMonitor::IslLinkMonitor() : m_alpha(0.9) {}
+IslLinkMonitor::IslLinkMonitor() : m_alpha(0.9), m_trustAfterFailure(false) {}
 
 void IslLinkMonitor::DoDispose() {
     m_node = nullptr;
@@ -166,14 +179,54 @@ swarm::core::Time IslLinkMonitor::macServiceTime(swarm::core::NodeAddress nextHo
 }
 
 void IslLinkMonitor::NotifyInterface(uint32_t interface, bool up) {
-    for (const Link& l : m_links) {
+    for (Link& l : m_links) {
         if (InterfaceOf(l) == static_cast<int32_t>(interface)) {
+            l.failed |= !up;
             const Ipv4Address peer = PeerOf(l);
             if (peer != Ipv4Address()) {
                 m_linkChangeTrace(peer, up);
             }
+            Ptr<Channel> channel = l.device->GetChannel();
+            if (channel && channel->GetNDevices() == 2) {
+                Ptr<NetDevice> far = channel->GetDevice(0) == l.device ? channel->GetDevice(1)
+                                                                       : channel->GetDevice(0);
+                if (Ptr<IslLinkMonitor> m = far->GetNode()->GetObject<IslLinkMonitor>()) {
+                    m->FarEndChanged(far, up);
+                }
+            }
         }
     }
+}
+
+void IslLinkMonitor::FarEndChanged(Ptr<NetDevice> device, bool up) {
+    for (Link& l : m_links) {
+        if (l.device == device) {
+            l.failed |= !up;
+            const Ipv4Address peer = PeerOf(l);
+            if (peer != Ipv4Address()) {
+                m_peerLinkChangeTrace(peer, up);
+            }
+        }
+    }
+}
+
+const IslLinkMonitor::Link* IslLinkMonitor::LinkOn(uint32_t interface) const {
+    for (const Link& l : m_links) {
+        if (InterfaceOf(l) == static_cast<int32_t>(interface)) {
+            return &l;
+        }
+    }
+    return nullptr;
+}
+
+Ipv4Address IslLinkMonitor::PeerOnInterface(uint32_t interface) const {
+    const Link* l = LinkOn(interface);
+    return l ? PeerOf(*l) : Ipv4Address();
+}
+
+bool IslLinkMonitor::IsAuthoritative(uint32_t interface) const {
+    const Link* l = LinkOn(interface);
+    return l && PeerOf(*l) != Ipv4Address() && (!l->failed || m_trustAfterFailure);
 }
 
 }  // namespace ns3
