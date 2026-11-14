@@ -23,6 +23,11 @@ on:
         type: choice
         options: [dry-run, bump]
         default: dry-run
+      increment:
+        description: "auto: the bump Commitizen reads from the commits; PATCH, MINOR or MAJOR force it (MAJOR releases 1.0.0, docs/api-policy.md \"Freezing\")"
+        type: choice
+        options: [auto, PATCH, MINOR, MAJOR]
+        default: auto
   push:
     branches: [main]   # the merged bump PR releases; any other push is a no-op
 permissions:
@@ -40,6 +45,7 @@ jobs:
     uses: swarm-routing/.github/.github/workflows/reusable-release.yml@main
     with:
       mode: ${{ inputs.mode }}   # empty on push: release
+      increment: ${{ inputs.increment != 'auto' && inputs.increment || '' }}  # '' on push and for auto (swarm-routing/.github#211)
     secrets:
       BOT_APP_ID: ${{ secrets.BOT_APP_ID }}
       BOT_APP_PRIVATE_KEY: ${{ secrets.BOT_APP_PRIVATE_KEY }}
