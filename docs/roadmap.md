@@ -88,7 +88,7 @@ flowchart TB
     V03 --> V10["swarm-core v1.0.0"]
     ARA & BEE -.->|"gated releases on it,<br/>no API change"| V10
     I14 -.->|"decided before 1.0"| V10
-    V02 -.->|"additive, byte-identical,<br/>every consumer green"| ARA & BEE
+    V02 -.->|"additive, byte-identical;<br/>consumer check at the tag<br/>not recorded (see below)"| ARA & BEE
     V02 -.->|"held packets and the previous hop (#40):<br/>Termite discovery"| TER
     V01 -.-> TER & HOP
     V01 -.-> AHN
@@ -110,7 +110,8 @@ that day
 ([ARA run 43387381816](https://github.com/swarm-routing/ARA/actions/runs/43387381816),
 [BeeAdHoc run 43382837899](https://github.com/swarm-routing/BeeAdHoc/actions/runs/43382837899)),
 on swarm-core `71ab416`, whose changes since the tag (#104, #105, #106, #109)
-touch build files, workflows and docs, no source under `core/` or `model/`.
+touch build files, workflows, docs and one test (the consumer project
+`core/test/consumer/`), no library source under `core/` or `model/`.
 1.0.0 needs two gated protocol releases built on it unchanged.
 
 ### The release train
