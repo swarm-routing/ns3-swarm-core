@@ -21,7 +21,10 @@
 %   python3 -I tools/fidelity/fidelity.py bib entry DOI --key K --role R
 %   python3 -I tools/fidelity/fidelity.py bib entry --url URL --key K --role R
 %   python3 -I tools/zenodo/zenodo.py bibtex OWNER/REPO --key K --role tool
-% (all in swarm-routing/.github). Only two fields are the repository's own,
+% (all in swarm-routing/.github). One exception, for a thesis whose record
+% names neither its degree nor its grantor: its type (@phdthesis,
+% @mastersthesis) and `school` may come from the thesis's own title page, and
+% its `note` then says so. Only two fields are the repository's own,
 % added by hand after pasting: `note`, one line on why the work is cited, and
 % `notdoi`, a DOI `bib check --online` matched to another work of the same
 % title. With nothing to cite yet, the file stays
