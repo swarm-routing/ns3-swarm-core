@@ -65,6 +65,45 @@ no edit on your side. The pin must be a commit that has
 does exactly this is built on every PR (`core/test/consumer/`,
 `tools/checks/check-core-consumer.sh`).
 
+## Test a protocol core without a simulator
+
+`core/testbench/swarm-testbench.h` is a discrete-event testbench for a
+protocol's core tests (#15): one event queue drives the ports a core takes
+(`IClock`, `IRng`, `ITimerScheduler`, `INeighborProvider`) on N nodes, over a
+scripted topology (links up and down, partitions) and an ideal MAC
+(broadcast and unicast after a fixed delay, no loss unless scripted, a
+unicast without a link handed back as a retry-limit failure). It lets a core
+test assert a trend (local repair beats re-flooding, a storm stays bounded on
+a partition, evaporation forgets a stale route) with no ns-3, so a failure
+means the algorithm, not the PHY or the harness. It is header-only and
+`MIT OR GPL-2.0-only`, and the same seed and script give the same trace and
+digest.
+
+A protocol repository that links `swarm::core` (above) includes it from its
+core tests, with no source to list:
+
+1. Write one adapter per protocol: derive from
+   `swarm::core::testbench::INodeAdapter<Msg>`, where `Msg` is your core's
+   message. Build your core from the `NodePorts<Msg>&` the factory hands you
+   (`clock()`, `rng()`, `timers()`, the ports object as the neighbour
+   provider). Turn its decisions into `ports.broadcast(msg)` and
+   `ports.unicast(to, msg)`, and feed `receive`, `undelivered` and
+   `linkChanged` to it.
+2. In a test, build a `Network<Msg>` on a `Topology` (say `Topology::line(6)`),
+   `install` the adapter, script the run (`linkAt`, `setLoss`, `at`), `run`,
+   and assert on the counters (`sent(kind)`, `sentBy`, `deliveredTotal`) and
+   on your adapters' state (`nodeAs<YourAdapter>(i)`).
+3. For determinism, run twice with one seed and compare `digest()`.
+
+The header's top comment has a 25-line adapter, and
+`core/test/test-testbench.cc` has a full reference: reactive discovery on a
+6-node line with one link break, where local repair costs about half the
+control of re-flooding from the source and loses no data. In ARA, BeeAdHoc,
+Termite and HOPNET the adapter wraps the core's router, as each ns-3 adapter
+does. Until their `core/CMakeLists.txt` links `swarm::core`, a protocol
+reaches the header through its fetched swarm-core checkout's `core/`
+directory on its include path.
+
 <!-- org-sync:begin citing -->
 ## Releases & citing
 

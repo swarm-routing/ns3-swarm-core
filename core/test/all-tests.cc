@@ -11,7 +11,7 @@ namespace swarm::core::test {
 
 namespace {
 
-constexpr std::array<NamedTest, 23> kTests{{
+constexpr std::array<NamedTest, 29> kTests{{
     {"wire: roundtrip of every field", TestWireRoundtrip},
     {"wire: the reader fails closed", TestWireFailsClosed},
     {"wire: seeded fuzz (fails or round-trips to itself)", TestWireFuzz},
@@ -35,6 +35,13 @@ constexpr std::array<NamedTest, 23> kTests{{
     {"router observer: every callback, kind names", TestObserverCallbacks},
     {"router observer: bounded counters", TestObserverCounters},
     {"router observer: same decisions with and without one", TestObserverNonIntrusive},
+    {"testbench: event queue, ordered, cancellable, bounded", TestTestbenchEventQueue},
+    {"testbench: topology, links, partition", TestTestbenchTopology},
+    {"testbench: ideal MAC, scripted links and loss, the node's ports", TestTestbenchMac},
+    {"testbench: the documented adapter example", TestTestbenchExample},
+    {"testbench: same seed, identical trace; bounded trace", TestTestbenchDeterminism},
+    {"testbench trend: local repair bounded vs re-flood, 6-node line, one break",
+     TestTestbenchLocalRepairTrend},
 }};
 
 }  // namespace
