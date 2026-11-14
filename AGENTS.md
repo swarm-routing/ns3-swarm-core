@@ -27,8 +27,10 @@ core/               simulator-free primitives, namespace swarm::core — MIT OR 
                     #33), swarm-pheromone-table.{h,cc} (flat per-destination rows: row() views, forEach,
                     bestEntry; #45),
                     swarm-selection.{h,cc} (roulette, evaporationFactor), swarm-route-decision.h,
-                    swarm-link-metric.h (ILinkMetric), swarm-energy-metric.h (EnergyMetric: 1 / residual energy
-                    per hop, floored; AntHocNet's bit for bit; #2), swarm-observer.{h,cc} (IRouterObserver, KindName,
+                    swarm-link-metric.h (ILinkMetric; LinkObservation::stability, #3), swarm-energy-metric.h
+                    (EnergyMetric: 1 / residual energy per hop, floored; AntHocNet's bit for bit; #2),
+                    swarm-fuzzy-metric.h (FuzzyMetric: delay x stability rule table, quality / hops; #3),
+                    swarm-observer.{h,cc} (IRouterObserver, KindName,
                     CountingObserver -> RouterStats: bounded counters); CMakeLists.txt builds it alone, no ns-3
                     swarm-core-sources.cmake: the files of core/, listed once for both builds (#100)
 core/testbench/     swarm-testbench.h: the discrete-event testbench for protocol cores' tests (#15; header-only,
@@ -50,9 +52,11 @@ model/              ns-3 glue — GPL-2.0-only; each file derived from AntHocNet
                     Observer() -> ControlTx/ControlRx/RouteChanged/DataDecision/StateSize trace sources,
                     GetRouterStats, the kind-name registry SetKindNames/GetKindName; node lifecycle #43:
                     Shutdown/Crash/Start, the DoNodeShutdown/DoNodeCrash/DoNodeStart hooks, the Lifecycle
-                    trace source, NodeDown drops),
+                    trace source, NodeDown drops; neighbours from link state on p2p #4: IslHelloSuppression,
+                    BroadcastBeacon, BeaconSuppressed, IsLinkStateNeighbor, peers announced through OnLinkUp),
                     swarm-wifi-link-monitor.h (ILinkState + ILinkQuality + retry-limit LinkFailure),
-                    swarm-isl-link-monitor.h (INeighborProvider + ILinkState + LinkChange on p2p),
+                    swarm-isl-link-monitor.h (INeighborProvider + ILinkState + LinkChange on p2p; PeerOnInterface,
+                    IsAuthoritative: one known peer, never failed, TrustAfterFailure off, #4),
                     swarm-energy-metric-hook.h (IEnergy from an EnergySource's RemainingEnergy trace)
 helper/             swarm-routing-helper.h: SwarmRoutingHelper (one-call Install, AssignStreams, SetKindNames,
                     CollectStats -> SwarmRoutingStats), SwarmMonitorHelper; swarm-lifecycle-helper.h:
@@ -458,13 +462,14 @@ because the issue threads were thorough. Caveman the chat, not the record.
 | You want to… | Go to |
 |--------------|-------|
 | Know which release a piece of work serves, or why something is not planned | [`docs/roadmap.md`](docs/roadmap.md) (the ladder v0.1.0 → v1.0.0, per-release exit criteria, non-goals; issues carry `release:` labels) |
+| Know what the API is, whether a change is breaking, or how to deprecate something | [`docs/api-policy.md`](docs/api-policy.md) (what v1.0.0 freezes, SemVer against it, `kSwarmCoreApiVersion`, the two-step deprecation; #83) |
 | Source of the primitives | AntHocNet `core/include/anthocnet/core/`, `core/src/` (MIT OR GPL-2.0-only → `core/` here); each `core/` file names its source file and commit |
 | Use or extend a primitive | `core/swarm-*.h` (the API, documented in place), its test in `core/test/`, the list in `core/test/all-tests.cc` |
 | Test a protocol core's trends without ns-3 (repair vs flood, bounded storms, evaporation) | `core/testbench/swarm-testbench.h` (the adapter contract and a short example in its top comment), the reference trend in `core/test/test-testbench.cc`, README "Test a protocol core without a simulator" (#15) |
 | Report a protocol's internals (control by kind, route changes, data decisions, state footprint) | its core calls `swarm::core::IRouterObserver` (`core/swarm-observer.h`), the adapter passes `&Observer()` and registers its `KindName` table; read with the trace sources or `SwarmRoutingHelper::CollectStats` (#42; consumer: swarm-routing/ns3-tools#91) |
 | Script node failures (shutdown, crash, restart) the same way for every arm | `SwarmLifecycleHelper` (`helper/swarm-lifecycle-helper.h`: times or a `<time s> <node> <op>` file); a protocol clears and restarts its state in `DoNodeShutdown`/`DoNodeCrash`/`DoNodeStart` on `SwarmRoutingBase`, and its core uses each primitive's `clear()` (the reset contract) (#43) |
 | Write a protocol's ns-3 adapter | derive from `SwarmRoutingBase` (`model/swarm-routing-base.h`: the hooks, services and ports), install with `SwarmRoutingHelper`; the toy protocol in `test/swarm-glue-tests.cc` is a minimal example |
-| Merge a change to `core/` | every protocol repository that pins swarm-core (ARA, BeeAdHoc, Termite, HOPNET) goes red on its `swarm-core / pin` check as soon as it lands, and its open PRs are blocked: open the pin-bump PR in each (`SWARM_CORE_REF` in `core/CMakeLists.txt`, the `Makefile`, every workflow's `core-deps`; the failing check names each place), verified with its core tests, until org-bot opens them (swarm-routing/.github#190, #208). A new `core/` file goes into `core/swarm-core-sources.cmake` only; a consumer that links `swarm::core` (README "Use core/ from another CMake project") needs no edit for it, one that still lists swarm-core's `.cc` files itself (`swarm_core_primitives`, the four today; #100) adds the file there in its pin-bump PR |
+| Merge a change to `core/` | every protocol repository that pins swarm-core (ARA, BeeAdHoc, Termite, HOPNET) goes red on its `swarm-core / pin` check as soon as it lands, and its open PRs are blocked: open the pin-bump PR in each (`SWARM_CORE_REF` in `core/CMakeLists.txt`, the `Makefile`, every workflow's `core-deps`; the failing check names each place), verified with its core tests, until org-bot opens them (swarm-routing/.github#190, #208). A new `core/` file goes into `core/swarm-core-sources.cmake` only; the four protocol repositories link `swarm::core` (README "Use core/ from another CMake project"; #100: swarm-routing/ARA#147, swarm-routing/BeeAdHoc#125, swarm-routing/Termite#118, swarm-routing/HOPNET#121), so a new file needs no edit there beyond the pin bump |
 | Source of the glue | AntHocNet `ns3/baselines/adaptive/model/adaptive-routing-base.*`, `ns3/anthocnet/model/anthocnet-{adapters,rqueue,routing-protocol}.*` (GPL-2.0-only → `model/` here) |
 | Wire-format discipline | AntHocNet `docs/wire-format.md`, ADR-0006 |
 | Link-metric seam history | AntHocNet #142 (closed), #145, #146 |

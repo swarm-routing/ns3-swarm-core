@@ -100,9 +100,13 @@ The header's top comment has a 25-line adapter, and
 6-node line with one link break, where local repair costs about half the
 control of re-flooding from the source and loses no data. In ARA, BeeAdHoc,
 Termite and HOPNET the adapter wraps the core's router, as each ns-3 adapter
-does. Until their `core/CMakeLists.txt` links `swarm::core`, a protocol
-reaches the header through its fetched swarm-core checkout's `core/`
-directory on its include path.
+does; they link `swarm::core`, so the header is already on their include path.
+
+## API stability
+
+What counts as the API, which change is breaking, what `kSwarmCoreApiVersion`
+means and how an API is deprecated: [docs/api-policy.md](docs/api-policy.md).
+Releases are 0.x until v1.0.0, which freezes the API (#83).
 
 <!-- org-sync:begin citing -->
 ## Releases & citing

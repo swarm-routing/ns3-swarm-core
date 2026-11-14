@@ -22,7 +22,13 @@
 // - the router observer (core/swarm-observer.h, #42): Observer() is the
 //   IRouterObserver the adapter hands its core; it feeds the ControlTx,
 //   ControlRx, RouteChanged, DataDecision and StateSize trace sources and
-//   bounded per-node counters (GetRouterStats), and only reads (org rule 5).
+//   bounded per-node counters (GetRouterStats), and only reads (org rule 5);
+// - neighbour discovery from link state on point-to-point links (#4): with
+//   IslHelloSuppression on, BroadcastBeacon skips every interface the node's
+//   IslLinkMonitor calls authoritative (one known peer, never failed), the
+//   peers of those interfaces are announced through OnLinkUp at start and
+//   restart, and IsLinkStateNeighbor tells the adapter which neighbours it
+//   must not age out for missing hellos. Off by default: nothing changes.
 //
 // Derived from swarm-routing/AntHocNet
 // ns3/baselines/adaptive/model/adaptive-routing-base.{h,cc} @ 3e53f04
@@ -42,6 +48,7 @@
 #include "ns3/ipv4-interface-address.h"
 #include "ns3/ipv4-routing-protocol.h"
 #include "ns3/mac48-address.h"
+#include "ns3/event-id.h"
 #include "ns3/net-device.h"
 #include "ns3/node.h"
 #include "ns3/socket.h"
@@ -218,7 +225,10 @@ protected:
     /// down).
     virtual void OnLinkFailure(Ipv4Address /*neighbor*/) {}
 
-    /// A point-to-point link to `neighbor` came up.
+    /// A point-to-point link to `neighbor` came up. With IslHelloSuppression
+    /// on, also called once per authoritative interface's peer at start (an
+    /// event at time 0 after DoInitialize) and after DoNodeStart: the
+    /// neighbour-learn path a hello would otherwise feed (#4).
     virtual void OnLinkUp(Ipv4Address /*neighbor*/) {}
 
     /// The Wi-Fi MAC gave up on data packet `p` (IP header removed, `header`
@@ -248,6 +258,25 @@ protected:
     /// One-hop broadcast of a control message on every interface. Nothing
     /// is sent while the node is down; neither is a unicast.
     void BroadcastControl(Ptr<Packet> p);
+    /// One-hop broadcast of a beacon: a control message whose only role is
+    /// liveness (a hello). It goes out as BroadcastControl does, except on the
+    /// interfaces where BeaconSuppressed is true. Returns the number of
+    /// interfaces it was sent on, so the adapter reports to its observer only
+    /// a beacon that left. A hello that carries anything else (pheromone
+    /// diffusion adverts, a neighbour's canonical address) is not a beacon:
+    /// send that part with BroadcastControl, or on its own timer (#4).
+    uint32_t BroadcastBeacon(Ptr<Packet> p);
+    /// Whether beacons skip IPv4 interface `interface`: IslHelloSuppression is
+    /// on and the node's IslLinkMonitor gives that interface's neighbour from
+    /// link state (IslLinkMonitor::IsAuthoritative). Always false when the
+    /// attribute is off or the node has no IslLinkMonitor.
+    bool BeaconSuppressed(uint32_t interface) const;
+    /// Whether `neighbor` is the peer of an interface whose beacons are
+    /// suppressed: its presence comes from link state (OnLinkUp,
+    /// OnLinkFailure), so a hello-loss detector must not age it out. False
+    /// once its link has failed (hello takes over again) or with the
+    /// attribute off.
+    bool IsLinkStateNeighbor(Ipv4Address neighbor) const;
     /// One-hop unicast of a control message to a neighbour.
     void UnicastControl(Ptr<Packet> p, Ipv4Address neighbor);
     /// Forwards a data packet to `next` (stamps SwarmPrevHopTag).
@@ -339,6 +368,12 @@ private:
     void WifiLinkFailed(Ipv4Address neighbor, Mac48Address mac);
     void WifiUndelivered(Ptr<const Packet> datagram, Ipv4Address neighbor);
     void IslLinkChanged(Ipv4Address peer, bool up);
+    /// OnLinkUp for the peer of every interface whose beacons are suppressed.
+    void AnnounceLinkStatePeers();
+    /// Connects the node's IslLinkMonitor once, at DoInitialize or when it is
+    /// aggregated later; with IslHelloSuppression, also its far-end carrier
+    /// (PeerLinkChange) and the announcement of its peers.
+    void ConnectIslMonitor();
     /// The common teardown of Shutdown and Crash.
     void GoDown(SwarmLifecycleOp op);
 
@@ -394,6 +429,11 @@ private:
     /// from RouteInput so ResendData can send outside it.
     UnicastForwardCallback m_ucb;
     SwarmNodeState m_state = SwarmNodeState::Up;
+    /// IslHelloSuppression (#4), and the time-0 announcement it schedules.
+    bool m_islHelloSuppression = false;
+    EventId m_announceEvent;
+    bool m_initialized = false;   ///< DoInitialize ran
+    bool m_islConnected = false;  ///< ConnectIslMonitor connected one
     TracedCallback<SwarmNodeState, SwarmLifecycleOp> m_lifecycle;
     /// The cached ports (raw: they live in the node's aggregate, which holds
     /// this protocol too; dropped at dispose).
