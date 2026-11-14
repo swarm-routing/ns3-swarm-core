@@ -11,19 +11,23 @@ namespace swarm::core::test {
 
 namespace {
 
-constexpr std::array<NamedTest, 32> kTests{{
+constexpr std::array<NamedTest, 35> kTests{{
     {"wire: roundtrip of every field", TestWireRoundtrip},
     {"wire: the reader fails closed", TestWireFailsClosed},
     {"wire: seeded fuzz (fails or round-trips to itself)", TestWireFuzz},
     {"wire: writers byte-identical to the reference on a corpus", TestWireWriterCorpus},
     {"visited path: bounded", TestVisitedPath},
     {"visited path: wire", TestVisitedPathWire},
+    {"visited path: re-time the last hop, range-for", TestVisitedPathBackTimeAndRange},
     {"dedup history: bounded FIFO", TestDedupHistory},
     {"dedup history: optional entry lifetime", TestDedupHistoryLifetime},
     {"reset contract: clear() is as new, configuration kept", TestResetContract},
     {"pheromone table: bounded", TestPheromoneTable},
     {"pheromone table: rows, forEach, best, add", TestPheromoneRows},
     {"pheromone table: one-pass evaporation", TestOnePassEvaporation},
+    {"pheromone table: per-destination evaporation, filtered", TestPerDestinationEvaporation},
+    {"pheromone table: per-destination evaporation is AntHocNet's ageing, bit for bit",
+     TestPerDestinationEvaporationAntHocNet},
     {"pheromone table: same as the std::map storage", TestPheromoneTableModel},
     {"evaporation", TestEvaporation},
     {"roulette selection", TestRoulette},
