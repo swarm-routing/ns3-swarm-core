@@ -607,7 +607,9 @@ void SwarmRoutingBase::ReleaseDeferred(Ipv4Address dst) {
             back.push_back(std::move(e));  // keeps its first enqueue time
             continue;
         }
-        m_queue->NoteForwarded(e);
+        if (!e.ucb.IsNull() && InterfaceTowards(next) >= 0) {
+            m_queue->NoteForwarded(e);  // only what ForwardData will send
+        }
         OnDataForwarded(e.packet, e.header, next);
         ForwardData(e.packet, e.header, next, e.ucb);
     }
