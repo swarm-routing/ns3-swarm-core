@@ -44,9 +44,11 @@ model/              ns-3 glue — GPL-2.0-only; each file derived from AntHocNet
                     Observer() -> ControlTx/ControlRx/RouteChanged/DataDecision/StateSize trace sources,
                     GetRouterStats, the kind-name registry SetKindNames/GetKindName; node lifecycle #43:
                     Shutdown/Crash/Start, the DoNodeShutdown/DoNodeCrash/DoNodeStart hooks, the Lifecycle
-                    trace source, NodeDown drops),
+                    trace source, NodeDown drops; neighbours from link state on p2p #4: IslHelloSuppression,
+                    BroadcastBeacon, BeaconSuppressed, IsLinkStateNeighbor, peers announced through OnLinkUp),
                     swarm-wifi-link-monitor.h (ILinkState + ILinkQuality + retry-limit LinkFailure),
-                    swarm-isl-link-monitor.h (INeighborProvider + ILinkState + LinkChange on p2p),
+                    swarm-isl-link-monitor.h (INeighborProvider + ILinkState + LinkChange on p2p; PeerOnInterface,
+                    IsAuthoritative: one known peer, never failed, TrustAfterFailure off, #4),
                     swarm-energy-metric-hook.h (IEnergy from an EnergySource's RemainingEnergy trace)
 helper/             swarm-routing-helper.h: SwarmRoutingHelper (one-call Install, AssignStreams, SetKindNames,
                     CollectStats -> SwarmRoutingStats), SwarmMonitorHelper; swarm-lifecycle-helper.h:

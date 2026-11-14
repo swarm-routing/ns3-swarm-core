@@ -10,6 +10,7 @@
 #include "swarm-isl-link-monitor.h"
 #include "swarm-wifi-link-monitor.h"
 
+#include "ns3/boolean.h"
 #include "ns3/inet-socket-address.h"
 #include "ns3/ipv4-l3-protocol.h"
 #include "ns3/ipv4-route.h"
@@ -17,6 +18,7 @@
 #include "ns3/node.h"
 #include "ns3/output-stream-wrapper.h"
 #include "ns3/pointer.h"
+#include "ns3/simulator.h"
 #include "ns3/trace-source-accessor.h"
 #include "ns3/udp-header.h"
 #include "ns3/udp-socket-factory.h"
@@ -97,6 +99,15 @@ TypeId SwarmRoutingBase::GetTypeId() {
                           TimeValue(MilliSeconds(500)),
                           MakeTimeAccessor(&SwarmRoutingBase::m_purgeInterval),
                           MakeTimeChecker(MilliSeconds(1)))
+            .AddAttribute("IslHelloSuppression",
+                          "Learn the neighbour of every point-to-point interface the node's "
+                          "IslLinkMonitor calls authoritative from link state: beacons "
+                          "(BroadcastBeacon) skip it, its peer is announced through OnLinkUp "
+                          "at start and restart, and IsLinkStateNeighbor names it. Shared "
+                          "media keep their beacons. Off by default (#4).",
+                          BooleanValue(false),
+                          MakeBooleanAccessor(&SwarmRoutingBase::m_islHelloSuppression),
+                          MakeBooleanChecker())
             .AddTraceSource("ControlTx",
                             "A control message left this node: its kind (the protocol's wire "
                             "type byte), whether it was broadcast, and its size in bytes.",
@@ -152,6 +163,13 @@ void SwarmRoutingBase::DoInitialize() {
         if (Ptr<IslLinkMonitor> isl = node->GetObject<IslLinkMonitor>()) {
             isl->TraceConnectWithoutContext("LinkChange",
                                             MakeCallback(&SwarmRoutingBase::IslLinkChanged, this));
+            if (m_islHelloSuppression) {
+                // An event, not a call: the adapter's own DoInitialize (which
+                // may chain up before its core exists) has finished by then.
+                // Scheduled only when on, so the off path is event-identical.
+                m_announceEvent =
+                    Simulator::ScheduleNow(&SwarmRoutingBase::AnnounceLinkStatePeers, this);
+            }
         }
     }
     Ipv4RoutingProtocol::DoInitialize();
@@ -159,6 +177,7 @@ void SwarmRoutingBase::DoInitialize() {
 
 void SwarmRoutingBase::DoDispose() {
     m_timers.CancelAll();
+    m_announceEvent.Cancel();
     for (auto& kv : m_sockets) {
         kv.socket->Close();
     }
@@ -544,6 +563,7 @@ void SwarmRoutingBase::Crash() {
 void SwarmRoutingBase::GoDown(SwarmLifecycleOp op) {
     m_state = SwarmNodeState::Down;
     m_timers.CancelAll();
+    m_announceEvent.Cancel();
     m_purgeTimer.Cancel();
     if (m_queue) {
         m_queue->Flush();
@@ -562,6 +582,9 @@ void SwarmRoutingBase::Start() {
     m_purgeTimer.SetFunction(&SwarmRoutingBase::PurgeTick, this);
     m_purgeTimer.Schedule(m_purgeInterval);
     DoNodeStart();
+    if (m_islHelloSuppression) {
+        AnnounceLinkStatePeers();  // no hello will teach the protocol these (#4)
+    }
     m_lifecycle(m_state, SwarmLifecycleOp::Start);
 }
 
@@ -649,6 +672,64 @@ void SwarmRoutingBase::BroadcastControl(Ptr<Packet> p) {
     }
     for (const auto& kv : m_sockets) {
         kv.socket->SendTo(p->Copy(), 0, InetSocketAddress(kv.iface.GetBroadcast(), ControlPort()));
+    }
+}
+
+uint32_t SwarmRoutingBase::BroadcastBeacon(Ptr<Packet> p) {
+    if (IsDown()) {
+        return 0;
+    }
+    uint32_t sent = 0;
+    for (const auto& kv : m_sockets) {
+        if (BeaconSuppressed(static_cast<uint32_t>(kv.ifIndex))) {
+            continue;
+        }
+        kv.socket->SendTo(p->Copy(), 0, InetSocketAddress(kv.iface.GetBroadcast(), ControlPort()));
+        ++sent;
+    }
+    return sent;
+}
+
+bool SwarmRoutingBase::BeaconSuppressed(uint32_t interface) const {
+    if (!m_islHelloSuppression) {
+        return false;
+    }
+    Ptr<Node> node = NodeOf();
+    Ptr<IslLinkMonitor> isl = node ? node->GetObject<IslLinkMonitor>() : nullptr;
+    return isl && isl->IsAuthoritative(interface);
+}
+
+bool SwarmRoutingBase::IsLinkStateNeighbor(Ipv4Address neighbor) const {
+    if (!m_islHelloSuppression || neighbor == Ipv4Address()) {
+        return false;
+    }
+    Ptr<Node> node = NodeOf();
+    Ptr<IslLinkMonitor> isl = node ? node->GetObject<IslLinkMonitor>() : nullptr;
+    if (!isl) {
+        return false;
+    }
+    for (const auto& kv : m_sockets) {
+        const auto iface = static_cast<uint32_t>(kv.ifIndex);
+        if (isl->IsAuthoritative(iface) && isl->PeerOnInterface(iface) == neighbor) {
+            return true;
+        }
+    }
+    return false;
+}
+
+void SwarmRoutingBase::AnnounceLinkStatePeers() {
+    Ptr<Node> node = NodeOf();
+    Ptr<IslLinkMonitor> isl = node ? node->GetObject<IslLinkMonitor>() : nullptr;
+    if (!isl || IsDown()) {
+        return;
+    }
+    // Interface order (the socket list's), so the announcements are
+    // deterministic (org rule 5).
+    for (const auto& kv : m_sockets) {
+        const auto iface = static_cast<uint32_t>(kv.ifIndex);
+        if (isl->IsAuthoritative(iface)) {
+            OnLinkUp(isl->PeerOnInterface(iface));
+        }
     }
 }
 

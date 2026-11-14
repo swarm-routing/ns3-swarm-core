@@ -4,7 +4,8 @@
 // Tests of the ns-3 glue: the ports over ns-3, DeferredPacketQueue,
 // SwarmRoutingBase (through a toy protocol with no routing logic), each
 // monitor in a two- or three-node scenario, the router observer (its trace
-// sources, counters and kind names), and determinism: the same seed gives
+// sources, counters and kind names), neighbour discovery from link state on
+// point-to-point links (#4), and determinism: the same seed gives
 // byte-identical output with and without every monitor and observer attached.
 #include "swarm-glue-tests.h"
 
@@ -94,6 +95,9 @@ public:
     double discoveryDelay = 0.5;
     double discoveryJitter = 0.0;
     double helloInterval = 0.0;  ///< 0: no hellos
+    /// Hellos go through BroadcastBeacon (liveness only, #4) instead of
+    /// BroadcastControl, and are reported only when they left.
+    bool beacon = false;
     std::vector<Ipv4Address> dataFrom;
     std::vector<std::string> controlLog;
     std::vector<Ipv4Address> failures;
@@ -122,6 +126,12 @@ public:
     }
 
     void SendHelloNow() {
+        if (beacon) {
+            if (BroadcastBeacon(Create<Packet>(4)) > 0) {
+                Observer().onControlSent(kHello, true, 4);
+            }
+            return;
+        }
         BroadcastControl(Create<Packet>(4));
         Observer().onControlSent(kHello, true, 4);
     }
@@ -137,7 +147,9 @@ public:
                 [](uint32_t s) { return Create<Packet>(s); });
     }
 
+    using SwarmRoutingBase::BeaconSuppressed;
     using SwarmRoutingBase::Energy;
+    using SwarmRoutingBase::IsLinkStateNeighbor;
     using SwarmRoutingBase::LinkQuality;
     using SwarmRoutingBase::LinkState;
     using SwarmRoutingBase::Neighbors;
@@ -313,7 +325,7 @@ struct Line {
     NetDeviceContainer d01;
     NetDeviceContainer d12;
 
-    explicit Line(const std::string& rate01) {
+    explicit Line(const std::string& rate01, bool islHelloSuppression = false) {
         nodes.Create(3);
         PointToPointHelper p2p;
         p2p.SetChannelAttribute("Delay", StringValue("2ms"));
@@ -321,7 +333,12 @@ struct Line {
         d01 = p2p.Install(nodes.Get(0), nodes.Get(1));
         p2p.SetDeviceAttribute("DataRate", StringValue("10Mbps"));
         d12 = p2p.Install(nodes.Get(1), nodes.Get(2));
-        SwarmRoutingHelper("ns3::swarmtest::ToyProtocol").Install(nodes);
+        SwarmRoutingHelper helper("ns3::swarmtest::ToyProtocol");
+        if (islHelloSuppression) {
+            helper.Set("IslHelloSuppression", BooleanValue(true));
+        }
+        helper.Install(nodes);
+        helper.AssignStreams(nodes, 200);  // runs in one process compare (org rule 5)
         Ipv4AddressHelper a;
         a.SetBase("10.1.1.0", "255.255.255.0");
         a.Assign(d01);
@@ -1225,6 +1242,233 @@ NetDeviceContainer AdhocWifi(NodeContainer& nodes, double spacing) {
     return wifi.Install(phy, mac, nodes);
 }
 
+// --- neighbour discovery from link state on point-to-point links (#4)
+// ------------------------------------------------
+
+/// What a three-node ISL line did: every hello and data packet received, with
+/// its time, and what n1's protocol learned. One string, so two runs compare
+/// byte for byte.
+struct IslHelloRun {
+    std::string log;
+    uint32_t hellosBeforeCut = 0;    ///< hellos received anywhere, t < 5 s
+    uint32_t hellosN1toN2After = 0;  ///< hellos n2 had from n1, t > 6 s
+    uint32_t delivered = 0;
+    std::vector<Ipv4Address> n1Ups;
+    std::vector<Ipv4Address> n1Failures;
+    bool n2LinkStateAt1 = false;
+    bool n2LinkStateAfter = false;
+    bool n0LinkStateAfter = false;
+    bool n1SuppressedToN0After = false;
+    bool n1SuppressedToN2After = false;
+};
+
+/// n0 - n1 - n2 over 10 Mb/s point-to-point links, a hello from every node
+/// every 0.25 s on average, 20 data packets n0 -> n2 at 2 s and 10 more at
+/// 7 s; n1's interface toward n2 goes down at 5 s and comes back at 6 s.
+/// `beacon`: hellos through BroadcastBeacon; `suppress`: IslHelloSuppression.
+IslHelloRun RunIslHelloScenario(uint32_t seed, bool beacon, bool suppress) {
+    SwarmCoreSeed(seed);
+    Line line("10Mbps", suppress);
+    Ptr<Node> n0 = line.nodes.Get(0);
+    Ptr<Node> n1 = line.nodes.Get(1);
+    Ptr<Node> n2 = line.nodes.Get(2);
+    const Ipv4Address n0a = Addr(n0, 1);
+    const Ipv4Address n1a = Addr(n1, 1);
+    const Ipv4Address n2a = Addr(n2, 1);
+    for (uint32_t i = 0; i < 3; ++i) {
+        Toy(line.nodes.Get(i))->helloInterval = 0.25;
+        Toy(line.nodes.Get(i))->beacon = beacon;
+    }
+    Toy(n0)->routes[n2a] = n1a;
+    Toy(n1)->routes[n2a] = n2a;
+    std::vector<std::string> rx;
+    Ptr<Socket> sink = Sink(n2, &rx);
+    Ptr<Socket> src = Source(n0);
+    const uint32_t ifToN0 = n1->GetObject<Ipv4>()->GetInterfaceForDevice(line.d01.Get(1));
+    const uint32_t ifToN2 = n1->GetObject<Ipv4>()->GetInterfaceForDevice(line.d12.Get(0));
+    IslHelloRun run;
+
+    Simulator::Schedule(Seconds(1.0),
+                        [&]() { run.n2LinkStateAt1 = Toy(n1)->IsLinkStateNeighbor(n2a); });
+    for (const double t : {2.0, 7.0}) {
+        Simulator::Schedule(Seconds(t), [&, t]() {
+            for (int i = 0; i < (t < 5.0 ? 20 : 10); ++i) {
+                SendUdp(src, n2a, 200);
+            }
+        });
+    }
+    Simulator::Schedule(Seconds(5.0), [&]() { n1->GetObject<Ipv4>()->SetDown(ifToN2); });
+    Simulator::Schedule(Seconds(6.0), [&]() { n1->GetObject<Ipv4>()->SetUp(ifToN2); });
+    Simulator::Schedule(Seconds(6.5), [&]() {
+        run.n2LinkStateAfter = Toy(n1)->IsLinkStateNeighbor(n2a);
+        run.n0LinkStateAfter = Toy(n1)->IsLinkStateNeighbor(n0a);
+        run.n1SuppressedToN0After = Toy(n1)->BeaconSuppressed(ifToN0);
+        run.n1SuppressedToN2After = Toy(n1)->BeaconSuppressed(ifToN2);
+    });
+    Simulator::Stop(Seconds(10));
+    Simulator::Run();
+
+    std::ostringstream out;
+    for (uint32_t i = 0; i < 3; ++i) {
+        for (const std::string& l : Toy(line.nodes.Get(i))->controlLog) {
+            out << "ctl n" << i << " " << l << "\n";
+            std::istringstream fields(l);
+            double t = 0.0;
+            std::string link;
+            fields >> t >> link;
+            run.hellosBeforeCut += t < 5.0 ? 1 : 0;
+            if (i == 2 && t > 6.0) {
+                std::ostringstream from;
+                from << Addr(n1, 2) << "->";
+                run.hellosN1toN2After += link.rfind(from.str(), 0) == 0 ? 1 : 0;
+            }
+        }
+    }
+    for (const std::string& l : rx) {
+        out << "rx " << l << "\n";
+    }
+    run.delivered = static_cast<uint32_t>(rx.size());
+    run.n1Ups = Toy(n1)->ups;
+    run.n1Failures = Toy(n1)->failures;
+    for (const Ipv4Address& u : run.n1Ups) {
+        out << "up " << u << "\n";
+    }
+    for (const Ipv4Address& f : run.n1Failures) {
+        out << "fail " << f << "\n";
+    }
+    run.log = out.str();
+    Simulator::Destroy();
+    return run;
+}
+
+bool Contains(const std::vector<Ipv4Address>& v, Ipv4Address a) {
+    for (const Ipv4Address& x : v) {
+        if (x == a) {
+            return true;
+        }
+    }
+    return false;
+}
+
+class IslHelloSuppressionTestCase : public TestCase {
+public:
+    IslHelloSuppressionTestCase()
+        : TestCase("glue: ISL neighbours from link state, beacons suppressed, the seam "
+                   "gate, delivery unchanged, off path byte-identical (#4)") {}
+
+private:
+    void DoRun() override {
+        const IslHelloRun control = RunIslHelloScenario(1, false, false);
+        const IslHelloRun beaconOff = RunIslHelloScenario(1, true, false);
+        const IslHelloRun on = RunIslHelloScenario(1, true, true);
+        const IslHelloRun onAgain = RunIslHelloScenario(1, true, true);
+
+        // Off, a beacon is a broadcast: byte-identical output.
+        NS_TEST_EXPECT_MSG_EQ(beaconOff.log, control.log,
+                              "IslHelloSuppression off: BroadcastBeacon == BroadcastControl");
+        NS_TEST_EXPECT_MSG_EQ(on.log, onAgain.log, "on, same seed: identical output");
+        NS_TEST_EXPECT_MSG_EQ(control.n2LinkStateAt1, false, "off: no link-state neighbours");
+
+        // On: no hello on an authoritative ISL; the control count drops.
+        NS_TEST_EXPECT_MSG_GT(control.hellosBeforeCut, 40u, "off: hellos on every ISL");
+        NS_TEST_EXPECT_MSG_EQ(on.hellosBeforeCut, 0u, "on: no hello before any link fails");
+        // Neighbours learned without hello, at start.
+        const Ipv4Address n0a("10.1.1.1");
+        const Ipv4Address n2a("10.1.2.2");
+        NS_TEST_EXPECT_MSG_EQ(Contains(on.n1Ups, n0a), true, "n1 learns n0 from link state");
+        NS_TEST_EXPECT_MSG_EQ(Contains(on.n1Ups, n2a), true, "n1 learns n2 from link state");
+        NS_TEST_EXPECT_MSG_EQ(on.n2LinkStateAt1, true, "n2 is a link-state neighbour of n1");
+        // Neighbour loss from link state, with hello disabled on that ISL.
+        NS_TEST_ASSERT_MSG_EQ(on.n1Failures.size(), 1u, "one loss, from the interface down");
+        NS_TEST_EXPECT_MSG_EQ(on.n1Failures[0], n2a, "the peer of the cut ISL");
+        // The seam gate: a link that failed once is beaconed again.
+        NS_TEST_EXPECT_MSG_EQ(on.n2LinkStateAfter, false, "after a failure: hello's again");
+        NS_TEST_EXPECT_MSG_EQ(on.n1SuppressedToN2After, false, "the failed ISL beacons");
+        NS_TEST_EXPECT_MSG_EQ(on.n0LinkStateAfter, true, "the untouched ISL stays link-state");
+        NS_TEST_EXPECT_MSG_EQ(on.n1SuppressedToN0After, true, "and stays silent");
+        NS_TEST_EXPECT_MSG_GT(on.hellosN1toN2After, 0u, "n2 hears n1's hellos again");
+        // Multi-hop delivery is unaffected.
+        NS_TEST_EXPECT_MSG_EQ(control.delivered, 30u, "off: every data packet arrives");
+        NS_TEST_EXPECT_MSG_EQ(on.delivered, control.delivered, "on: the same delivery");
+    }
+};
+
+/// A hybrid node: n0 -p2p- n1 -wifi- n2. n1 must stay silent on its ISL and
+/// keep beaconing on the shared medium; a restart announces its ISL peer
+/// again.
+class IslHelloHybridTestCase : public TestCase {
+public:
+    IslHelloHybridTestCase()
+        : TestCase("glue: a node with an ISL and a shared medium suppresses beacons on "
+                   "the ISL only; restart re-announces link-state peers (#4)") {}
+
+private:
+    void DoRun() override {
+        SwarmCoreSeed(1);
+        NodeContainer nodes;
+        nodes.Create(3);
+        PointToPointHelper p2p;
+        p2p.SetChannelAttribute("Delay", StringValue("2ms"));
+        p2p.SetDeviceAttribute("DataRate", StringValue("10Mbps"));
+        NetDeviceContainer d01 = p2p.Install(nodes.Get(0), nodes.Get(1));
+        NodeContainer air(nodes.Get(1), nodes.Get(2));
+        NetDeviceContainer dw = AdhocWifi(air, 50.0);
+        SwarmRoutingHelper helper("ns3::swarmtest::ToyProtocol");
+        helper.Set("IslHelloSuppression", BooleanValue(true));
+        helper.Install(nodes);
+        helper.AssignStreams(nodes, 200);
+        WifiHelper::AssignStreams(dw, 10);
+        Ipv4AddressHelper a;
+        a.SetBase("10.1.1.0", "255.255.255.0");
+        a.Assign(d01);
+        a.SetBase("10.2.0.0", "255.255.255.0");
+        a.Assign(dw);
+        Ptr<Node> n0 = nodes.Get(0);
+        Ptr<Node> n1 = nodes.Get(1);
+        Ptr<Node> n2 = nodes.Get(2);
+        for (uint32_t i = 0; i < 3; ++i) {
+            Toy(nodes.Get(i))->helloInterval = 0.25;
+            Toy(nodes.Get(i))->beacon = true;
+        }
+        const uint32_t ifP2p = n1->GetObject<Ipv4>()->GetInterfaceForDevice(d01.Get(1));
+        const uint32_t ifAir = n1->GetObject<Ipv4>()->GetInterfaceForDevice(dw.Get(0));
+        const Ipv4Address n0a = Addr(n0, 1);
+        const Ipv4Address n2w = Addr(n2, 1);
+        bool p2pSuppressed = false;
+        bool airSuppressed = true;
+        bool n2LinkState = true;
+        Simulator::Schedule(Seconds(1.0), [&]() {
+            p2pSuppressed = Toy(n1)->BeaconSuppressed(ifP2p);
+            airSuppressed = Toy(n1)->BeaconSuppressed(ifAir);
+            n2LinkState = Toy(n1)->IsLinkStateNeighbor(n2w);
+        });
+        Simulator::Schedule(Seconds(3.0), [&]() { Toy(n1)->Crash(); });
+        Simulator::Schedule(Seconds(3.5), [&]() { Toy(n1)->Start(); });
+        Simulator::Stop(Seconds(5));
+        Simulator::Run();
+
+        NS_TEST_EXPECT_MSG_EQ(p2pSuppressed, true, "the ISL is silent");
+        NS_TEST_EXPECT_MSG_EQ(airSuppressed, false, "the shared medium is not");
+        NS_TEST_EXPECT_MSG_EQ(n2LinkState, false, "a Wi-Fi neighbour is hello's business");
+        NS_TEST_EXPECT_MSG_EQ(Toy(n0)->controlLog.empty(), true, "n0 hears no hello over p2p");
+        uint32_t fromN1 = 0;
+        std::ostringstream n1w;
+        n1w << Addr(n1, 2) << "->";
+        for (const std::string& l : Toy(n2)->controlLog) {
+            fromN1 += l.find(n1w.str()) != std::string::npos ? 1 : 0;
+        }
+        NS_TEST_EXPECT_MSG_GT(fromN1, 5u, "n2 hears n1's hellos over Wi-Fi");
+        NS_TEST_EXPECT_MSG_EQ(Toy(n1)->controlLog.empty(), false, "n1 hears n2's");
+        uint32_t n0Ups = 0;
+        for (const Ipv4Address& u : Toy(n1)->ups) {
+            n0Ups += u == n0a ? 1 : 0;
+        }
+        NS_TEST_EXPECT_MSG_EQ(n0Ups, 2u, "n0 announced at start and again after restart");
+        NS_TEST_EXPECT_MSG_EQ(Contains(Toy(n1)->ups, n2w), false, "never the Wi-Fi peer");
+        Simulator::Destroy();
+    }
+};
+
 class WifiMonitorTestCase : public TestCase {
 public:
     WifiMonitorTestCase()
@@ -1573,6 +1817,8 @@ std::vector<TestCase*> MakeGlueTestCases() {
             new RoutingBaseTestCase,
             new DeferFromAdapterTestCase,
             new IslMonitorTestCase,
+            new IslHelloSuppressionTestCase,
+            new IslHelloHybridTestCase,
             new WifiMonitorTestCase,
             new UndeliveredTestCase(UndeliveredTestCase::Variant::Plain),
             new UndeliveredTestCase(UndeliveredTestCase::Variant::Checksums),
