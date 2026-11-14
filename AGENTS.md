@@ -27,7 +27,8 @@ core/               simulator-free primitives, namespace swarm::core — MIT OR 
                     #33), swarm-pheromone-table.{h,cc} (flat per-destination rows: row() views, forEach,
                     bestEntry; #45),
                     swarm-selection.{h,cc} (roulette, evaporationFactor), swarm-route-decision.h,
-                    swarm-link-metric.h (ILinkMetric), swarm-observer.{h,cc} (IRouterObserver, KindName,
+                    swarm-link-metric.h (ILinkMetric), swarm-energy-metric.h (EnergyMetric: 1 / residual energy
+                    per hop, floored; AntHocNet's bit for bit; #2), swarm-observer.{h,cc} (IRouterObserver, KindName,
                     CountingObserver -> RouterStats: bounded counters); CMakeLists.txt builds it alone, no ns-3
                     swarm-core-sources.cmake: the files of core/, listed once for both builds (#100)
 core/testbench/     swarm-testbench.h: the discrete-event testbench for protocol cores' tests (#15; header-only,

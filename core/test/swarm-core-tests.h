@@ -33,6 +33,7 @@ void TestSelectionDeterminism(Checker& c);
 void TestSelectionScratch(Checker& c);
 void TestRouteDecision(Checker& c);
 void TestPortsAndMetric(Checker& c);
+void TestEnergyMetric(Checker& c);
 void TestObserverCallbacks(Checker& c);
 void TestObserverCounters(Checker& c);
 void TestObserverNonIntrusive(Checker& c);

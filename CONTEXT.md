@@ -31,7 +31,9 @@ the wire-buffer path (`model/swarm-wire-buffer.h`: the core wire format
 written straight into and read out of an ns-3 `Buffer`), and a deferred queue
 without O(n²) rebuilds (#46). The node lifecycle (#43): `Shutdown`, `Crash`
 and `Start` on `SwarmRoutingBase`, with `SwarmLifecycleHelper` scripting the
-same failure for every arm.
+same failure for every arm. The energy-aware link metric (#2):
+`EnergyMetric` (`core/swarm-energy-metric.h`), AntHocNet's `energy` metric
+bit for bit, each relay pricing its own hop at 1 / residual energy.
 
 ARA, BeeAdHoc and Termite have their ns-3 modules on `SwarmRoutingBase`
 (each repository's AGENTS.md); HOPNET's is planned. The plan is

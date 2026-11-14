@@ -5,8 +5,9 @@
 // value. Derived from swarm-routing/AntHocNet
 // core/include/anthocnet/core/link_metric.h @ 78c4640 (MIT OR GPL-2.0-only).
 // The seam is shared; the concrete metrics stay with their protocols or arrive
-// as their own issues (energy-aware #2, fuzzy composite #3). AntHocNet's
-// ClassicMetric (its Eq. 2) and SinrMetric stay behind (golden rule 11).
+// as their own issues: the energy-aware EnergyMetric (#2,
+// swarm-energy-metric.h), the fuzzy composite (#3). AntHocNet's ClassicMetric
+// (its Eq. 2) and SinrMetric stay behind (golden rule 11).
 //
 // A metric is pure: it reads only what it is handed, never a simulator, clock
 // or RNG. Adapter-supplied signals (SINR, residual energy) arrive in
