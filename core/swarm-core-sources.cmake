@@ -25,6 +25,13 @@ set(SWARM_CORE_HEADERS
   swarm-visited-path.h
   swarm-wire.h
 )
+# The discrete-event testbench for protocol cores' tests (#15): header-only,
+# so neither build compiles anything for it, and it stays out of the ns-3
+# module's headers (and so out of ns3/swarm-core-module.h). A consumer that
+# links swarm::core includes "testbench/swarm-testbench.h".
+set(SWARM_CORE_TESTBENCH_HEADERS
+  testbench/swarm-testbench.h
+)
 # The tests both builds run. core/ alone adds test/run-core-tests.cc (its
 # main); the ns-3 module wraps the same functions in its test suite.
 set(SWARM_CORE_TEST_SOURCES
@@ -34,5 +41,6 @@ set(SWARM_CORE_TEST_SOURCES
   test/test-observer.cc
   test/test-selection.cc
   test/test-structures.cc
+  test/test-testbench.cc
   test/test-wire.cc
 )

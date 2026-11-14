@@ -33,7 +33,12 @@ core/               simulator-free primitives, namespace swarm::core — MIT OR 
                     swarm-observer.{h,cc} (IRouterObserver, KindName,
                     CountingObserver -> RouterStats: bounded counters); CMakeLists.txt builds it alone, no ns-3
                     swarm-core-sources.cmake: the files of core/, listed once for both builds (#100)
-core/test/          the core tests, one function per primitive (MIT OR GPL-2.0-only); run by ctest and by test.py
+core/testbench/     swarm-testbench.h: the discrete-event testbench for protocol cores' tests (#15; header-only,
+                    MIT OR GPL-2.0-only): EventQueue (bounded, cancellable), Rng (SplitMix64 streams), Topology
+                    (links, partition), Network<Msg> (ideal MAC, linkAt, setLoss, counters, bounded trace + digest),
+                    INodeAdapter<Msg> / NodePorts<Msg>; not in the ns-3 module's headers; README "Test a protocol core"
+core/test/          the core tests, one function per primitive (MIT OR GPL-2.0-only); run by ctest and by test.py; test-testbench.cc: the bench's tests and the reference trend
+                    (local repair vs re-flood on a 6-node line with one break)
 core/test/consumer/ a scratch CMake project that links swarm::core, built by tools/checks/check-core-consumer.sh (#100)
 core/bench/         dev-only microbenchmarks (MIT OR GPL-2.0-only; Google Benchmark, pinned, -DSWARM_CORE_BENCH=ON;
                     exempt from the core-include check, as it includes <benchmark/benchmark.h>)
@@ -460,6 +465,7 @@ because the issue threads were thorough. Caveman the chat, not the record.
 | Know what the API is, whether a change is breaking, or how to deprecate something | [`docs/api-policy.md`](docs/api-policy.md) (what v1.0.0 freezes, SemVer against it, `kSwarmCoreApiVersion`, the two-step deprecation; #83) |
 | Source of the primitives | AntHocNet `core/include/anthocnet/core/`, `core/src/` (MIT OR GPL-2.0-only → `core/` here); each `core/` file names its source file and commit |
 | Use or extend a primitive | `core/swarm-*.h` (the API, documented in place), its test in `core/test/`, the list in `core/test/all-tests.cc` |
+| Test a protocol core's trends without ns-3 (repair vs flood, bounded storms, evaporation) | `core/testbench/swarm-testbench.h` (the adapter contract and a short example in its top comment), the reference trend in `core/test/test-testbench.cc`, README "Test a protocol core without a simulator" (#15) |
 | Report a protocol's internals (control by kind, route changes, data decisions, state footprint) | its core calls `swarm::core::IRouterObserver` (`core/swarm-observer.h`), the adapter passes `&Observer()` and registers its `KindName` table; read with the trace sources or `SwarmRoutingHelper::CollectStats` (#42; consumer: swarm-routing/ns3-tools#91) |
 | Script node failures (shutdown, crash, restart) the same way for every arm | `SwarmLifecycleHelper` (`helper/swarm-lifecycle-helper.h`: times or a `<time s> <node> <op>` file); a protocol clears and restarts its state in `DoNodeShutdown`/`DoNodeCrash`/`DoNodeStart` on `SwarmRoutingBase`, and its core uses each primitive's `clear()` (the reset contract) (#43) |
 | Write a protocol's ns-3 adapter | derive from `SwarmRoutingBase` (`model/swarm-routing-base.h`: the hooks, services and ports), install with `SwarmRoutingHelper`; the toy protocol in `test/swarm-glue-tests.cc` is a minimal example |

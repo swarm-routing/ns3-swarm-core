@@ -39,6 +39,12 @@ void TestFuzzyMetric(Checker& c);
 void TestObserverCallbacks(Checker& c);
 void TestObserverCounters(Checker& c);
 void TestObserverNonIntrusive(Checker& c);
+void TestTestbenchEventQueue(Checker& c);
+void TestTestbenchTopology(Checker& c);
+void TestTestbenchMac(Checker& c);
+void TestTestbenchExample(Checker& c);
+void TestTestbenchDeterminism(Checker& c);
+void TestTestbenchLocalRepairTrend(Checker& c);
 
 /// One named test, for the runners.
 struct NamedTest {
