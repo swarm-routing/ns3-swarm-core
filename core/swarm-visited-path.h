@@ -71,6 +71,19 @@ public:
     bool full() const { return hops_.size() >= capacity_; }
     /// The last hop; a default Hop (kInvalidAddress) when empty.
     Hop back() const { return hops_.empty() ? Hop{} : hops_.back(); }
+    /// Sets the last hop's time in place (#125): a backward agent pricing the
+    /// hop it just took. The node is not touched, so contains() and the loop
+    /// check it guards stay as they were. False, changing nothing, when empty.
+    bool setBackTime(Time time) {
+        if (hops_.empty()) return false;
+        hops_.back().time = time;
+        return true;
+    }
+
+    /// The hops in push order, for range-for: `for (const Hop& h : path)`
+    /// reads the same sequence as hops() (#125).
+    std::span<const Hop>::iterator begin() const { return hops().begin(); }
+    std::span<const Hop>::iterator end() const { return hops().end(); }
 
     /// Encodes the path: u16 count, then each hop as i32 node + f64 time.
     void write(WireWriter& w) const {
