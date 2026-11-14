@@ -41,6 +41,11 @@ TypeId IslLinkMonitor::GetTypeId() {
                           MakeBooleanChecker())
             .AddTraceSource("LinkChange", "A point-to-point link went up or down (peer IP, up).",
                             MakeTraceSourceAccessor(&IslLinkMonitor::m_linkChangeTrace),
+                            "ns3::IslLinkMonitor::LinkChangeCallback")
+            .AddTraceSource("PeerLinkChange",
+                            "The far end of a point-to-point link took its interface down or "
+                            "up (peer IP, up): the carrier this end sees (#4).",
+                            MakeTraceSourceAccessor(&IslLinkMonitor::m_peerLinkChangeTrace),
                             "ns3::IslLinkMonitor::LinkChangeCallback");
     return tid;
 }
@@ -180,6 +185,26 @@ void IslLinkMonitor::NotifyInterface(uint32_t interface, bool up) {
             const Ipv4Address peer = PeerOf(l);
             if (peer != Ipv4Address()) {
                 m_linkChangeTrace(peer, up);
+            }
+            Ptr<Channel> channel = l.device->GetChannel();
+            if (channel && channel->GetNDevices() == 2) {
+                Ptr<NetDevice> far = channel->GetDevice(0) == l.device ? channel->GetDevice(1)
+                                                                       : channel->GetDevice(0);
+                if (Ptr<IslLinkMonitor> m = far->GetNode()->GetObject<IslLinkMonitor>()) {
+                    m->FarEndChanged(far, up);
+                }
+            }
+        }
+    }
+}
+
+void IslLinkMonitor::FarEndChanged(Ptr<NetDevice> device, bool up) {
+    for (Link& l : m_links) {
+        if (l.device == device) {
+            l.failed |= !up;
+            const Ipv4Address peer = PeerOf(l);
+            if (peer != Ipv4Address()) {
+                m_peerLinkChangeTrace(peer, up);
             }
         }
     }

@@ -247,6 +247,9 @@ protected:
     void DoNodeStart() override {
         lifecycleLog.emplace_back("start");
         routes = staticRoutes;
+        if (helloInterval > 0.0) {
+            ScheduleHello();  // the crash cancelled it
+        }
     }
 
     void OnLinkUp(Ipv4Address neighbor) override { ups.push_back(neighbor); }
@@ -1260,6 +1263,9 @@ struct IslHelloRun {
     bool n0LinkStateAfter = false;
     bool n1SuppressedToN0After = false;
     bool n1SuppressedToN2After = false;
+    std::vector<Ipv4Address> n2Failures;
+    bool n1LinkStateAtN2After = true;  ///< n2's view of n1 after the one-sided cut
+    bool n2SuppressedToN1After = true;
 };
 
 /// n0 - n1 - n2 over 10 Mb/s point-to-point links, a hello from every node
@@ -1304,6 +1310,8 @@ IslHelloRun RunIslHelloScenario(uint32_t seed, bool beacon, bool suppress) {
         run.n0LinkStateAfter = Toy(n1)->IsLinkStateNeighbor(n0a);
         run.n1SuppressedToN0After = Toy(n1)->BeaconSuppressed(ifToN0);
         run.n1SuppressedToN2After = Toy(n1)->BeaconSuppressed(ifToN2);
+        run.n1LinkStateAtN2After = Toy(n2)->IsLinkStateNeighbor(Addr(n1, 2));
+        run.n2SuppressedToN1After = Toy(n2)->BeaconSuppressed(1);
     });
     Simulator::Stop(Seconds(10));
     Simulator::Run();
@@ -1330,11 +1338,15 @@ IslHelloRun RunIslHelloScenario(uint32_t seed, bool beacon, bool suppress) {
     run.delivered = static_cast<uint32_t>(rx.size());
     run.n1Ups = Toy(n1)->ups;
     run.n1Failures = Toy(n1)->failures;
+    run.n2Failures = Toy(n2)->failures;
     for (const Ipv4Address& u : run.n1Ups) {
         out << "up " << u << "\n";
     }
     for (const Ipv4Address& f : run.n1Failures) {
         out << "fail " << f << "\n";
+    }
+    for (const Ipv4Address& f : run.n2Failures) {
+        out << "n2 fail " << f << "\n";
     }
     run.log = out.str();
     Simulator::Destroy();
@@ -1387,6 +1399,15 @@ private:
         NS_TEST_EXPECT_MSG_EQ(on.n0LinkStateAfter, true, "the untouched ISL stays link-state");
         NS_TEST_EXPECT_MSG_EQ(on.n1SuppressedToN0After, true, "and stays silent");
         NS_TEST_EXPECT_MSG_GT(on.hellosN1toN2After, 0u, "n2 hears n1's hellos again");
+        // The far end of a one-sided cut (ns-3 downs n1's interface only)
+        // loses the carrier too: n2 learns the loss and beacons again.
+        const Ipv4Address n1toN2("10.1.2.1");
+        NS_TEST_ASSERT_MSG_EQ(on.n2Failures.size(), 1u, "n2 hears of the cut from the carrier");
+        NS_TEST_EXPECT_MSG_EQ(on.n2Failures[0], n1toN2, "n1, on that link");
+        NS_TEST_EXPECT_MSG_EQ(on.n1LinkStateAtN2After, false, "n2 no longer trusts link state");
+        NS_TEST_EXPECT_MSG_EQ(on.n2SuppressedToN1After, false, "and beacons toward n1");
+        NS_TEST_EXPECT_MSG_EQ(control.n2Failures.empty(), true,
+                              "off: the far end sees what it did");
         // Multi-hop delivery is unaffected.
         NS_TEST_EXPECT_MSG_EQ(control.delivered, 30u, "off: every data packet arrives");
         NS_TEST_EXPECT_MSG_EQ(on.delivered, control.delivered, "on: the same delivery");
@@ -1452,12 +1473,17 @@ private:
         NS_TEST_EXPECT_MSG_EQ(n2LinkState, false, "a Wi-Fi neighbour is hello's business");
         NS_TEST_EXPECT_MSG_EQ(Toy(n0)->controlLog.empty(), true, "n0 hears no hello over p2p");
         uint32_t fromN1 = 0;
+        uint32_t fromN1AfterRestart = 0;
         std::ostringstream n1w;
         n1w << Addr(n1, 2) << "->";
         for (const std::string& l : Toy(n2)->controlLog) {
-            fromN1 += l.find(n1w.str()) != std::string::npos ? 1 : 0;
+            if (l.find(n1w.str()) != std::string::npos) {
+                ++fromN1;
+                fromN1AfterRestart += std::stod(l) > 3.5 ? 1 : 0;
+            }
         }
         NS_TEST_EXPECT_MSG_GT(fromN1, 5u, "n2 hears n1's hellos over Wi-Fi");
+        NS_TEST_EXPECT_MSG_GT(fromN1AfterRestart, 0u, "and again after n1 restarts");
         NS_TEST_EXPECT_MSG_EQ(Toy(n1)->controlLog.empty(), false, "n1 hears n2's");
         uint32_t n0Ups = 0;
         for (const Ipv4Address& u : Toy(n1)->ups) {
@@ -1465,6 +1491,46 @@ private:
         }
         NS_TEST_EXPECT_MSG_EQ(n0Ups, 2u, "n0 announced at start and again after restart");
         NS_TEST_EXPECT_MSG_EQ(Contains(Toy(n1)->ups, n2w), false, "never the Wi-Fi peer");
+        Simulator::Destroy();
+    }
+};
+
+/// A monitor aggregated after the protocol initialised is connected then:
+/// its peers are announced and its link changes reach the protocol (#4).
+class IslLateMonitorTestCase : public TestCase {
+public:
+    IslLateMonitorTestCase()
+        : TestCase("glue: an IslLinkMonitor aggregated after initialisation is connected (#4)") {}
+
+private:
+    void DoRun() override {
+        SwarmCoreSeed(1);
+        NodeContainer nodes;
+        nodes.Create(2);
+        PointToPointHelper p2p;
+        NetDeviceContainer d = p2p.Install(nodes.Get(0), nodes.Get(1));
+        SwarmRoutingHelper routing("ns3::swarmtest::ToyProtocol");
+        routing.Set("IslHelloSuppression", BooleanValue(true));
+        InternetStackHelper stack;
+        stack.SetRoutingHelper(routing);
+        stack.Install(nodes);  // no monitors
+        Ipv4AddressHelper a;
+        a.SetBase("10.1.1.0", "255.255.255.0");
+        a.Assign(d);
+        Ptr<Node> n0 = nodes.Get(0);
+        const Ipv4Address n1a = Addr(nodes.Get(1), 1);
+        bool suppressed = false;
+        Simulator::Schedule(Seconds(1.0), [&]() {
+            CreateObject<IslLinkMonitor>()->Install(n0);
+            suppressed = Toy(n0)->BeaconSuppressed(1);
+        });
+        Simulator::Schedule(Seconds(2.0), [&]() { n0->GetObject<Ipv4>()->SetDown(1); });
+        Simulator::Stop(Seconds(3));
+        Simulator::Run();
+        NS_TEST_EXPECT_MSG_EQ(suppressed, true, "the late monitor makes the ISL authoritative");
+        NS_TEST_EXPECT_MSG_EQ(Contains(Toy(n0)->ups, n1a), true, "and its peer is announced");
+        NS_TEST_ASSERT_MSG_EQ(Toy(n0)->failures.size(), 1u, "its link change reaches the protocol");
+        NS_TEST_EXPECT_MSG_EQ(Toy(n0)->failures[0], n1a, "the peer");
         Simulator::Destroy();
     }
 };
@@ -1819,6 +1885,7 @@ std::vector<TestCase*> MakeGlueTestCases() {
             new IslMonitorTestCase,
             new IslHelloSuppressionTestCase,
             new IslHelloHybridTestCase,
+            new IslLateMonitorTestCase,
             new WifiMonitorTestCase,
             new UndeliveredTestCase(UndeliveredTestCase::Variant::Plain),
             new UndeliveredTestCase(UndeliveredTestCase::Variant::Checksums),

@@ -160,18 +160,9 @@ void SwarmRoutingBase::DoInitialize() {
             wifi->TraceConnectWithoutContext(
                 "Undelivered", MakeCallback(&SwarmRoutingBase::WifiUndelivered, this));
         }
-        if (Ptr<IslLinkMonitor> isl = node->GetObject<IslLinkMonitor>()) {
-            isl->TraceConnectWithoutContext("LinkChange",
-                                            MakeCallback(&SwarmRoutingBase::IslLinkChanged, this));
-            if (m_islHelloSuppression) {
-                // An event, not a call: the adapter's own DoInitialize (which
-                // may chain up before its core exists) has finished by then.
-                // Scheduled only when on, so the off path is event-identical.
-                m_announceEvent =
-                    Simulator::ScheduleNow(&SwarmRoutingBase::AnnounceLinkStatePeers, this);
-            }
-        }
     }
+    m_initialized = true;
+    ConnectIslMonitor();
     Ipv4RoutingProtocol::DoInitialize();
 }
 
@@ -239,6 +230,9 @@ void SwarmRoutingBase::RefreshPorts() const {
 void SwarmRoutingBase::NotifyNewAggregate() {
     // A monitor aggregated to the node after the ports were read (#46).
     m_portsStale = true;
+    if (m_initialized) {
+        ConnectIslMonitor();  // one aggregated after initialisation (#4)
+    }
     Ipv4RoutingProtocol::NotifyNewAggregate();
 }
 
@@ -715,6 +709,27 @@ bool SwarmRoutingBase::IsLinkStateNeighbor(Ipv4Address neighbor) const {
         }
     }
     return false;
+}
+
+void SwarmRoutingBase::ConnectIslMonitor() {
+    Ptr<Node> node = NodeOf();
+    Ptr<IslLinkMonitor> isl = node ? node->GetObject<IslLinkMonitor>() : nullptr;
+    if (m_islConnected || !isl) {
+        return;
+    }
+    m_islConnected = true;
+    isl->TraceConnectWithoutContext("LinkChange",
+                                    MakeCallback(&SwarmRoutingBase::IslLinkChanged, this));
+    if (m_islHelloSuppression) {
+        // The far end's carrier: only a node that trusts link state needs it,
+        // so the off path sees exactly the events it saw before.
+        isl->TraceConnectWithoutContext("PeerLinkChange",
+                                        MakeCallback(&SwarmRoutingBase::IslLinkChanged, this));
+        // An event, not a call: the adapter's own DoInitialize (which may
+        // chain up before its core exists) has finished by then. Scheduled
+        // only when on, so the off path is event-identical.
+        m_announceEvent = Simulator::ScheduleNow(&SwarmRoutingBase::AnnounceLinkStatePeers, this);
+    }
 }
 
 void SwarmRoutingBase::AnnounceLinkStatePeers() {

@@ -370,6 +370,10 @@ private:
     void IslLinkChanged(Ipv4Address peer, bool up);
     /// OnLinkUp for the peer of every interface whose beacons are suppressed.
     void AnnounceLinkStatePeers();
+    /// Connects the node's IslLinkMonitor once, at DoInitialize or when it is
+    /// aggregated later; with IslHelloSuppression, also its far-end carrier
+    /// (PeerLinkChange) and the announcement of its peers.
+    void ConnectIslMonitor();
     /// The common teardown of Shutdown and Crash.
     void GoDown(SwarmLifecycleOp op);
 
@@ -428,6 +432,8 @@ private:
     /// IslHelloSuppression (#4), and the time-0 announcement it schedules.
     bool m_islHelloSuppression = false;
     EventId m_announceEvent;
+    bool m_initialized = false;   ///< DoInitialize ran
+    bool m_islConnected = false;  ///< ConnectIslMonitor connected one
     TracedCallback<SwarmNodeState, SwarmLifecycleOp> m_lifecycle;
     /// The cached ports (raw: they live in the node's aggregate, which holds
     /// this protocol too; dropped at dispose).

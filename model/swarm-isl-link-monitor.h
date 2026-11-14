@@ -64,8 +64,12 @@ public:
 
     /// IPv4 interface `interface` went up or down: if it sits on one of the
     /// monitored devices, fires LinkChange for its peer (and, when down, marks
-    /// the link as having failed: see IsAuthoritative). SwarmRoutingBase calls
-    /// it from NotifyInterfaceUp/Down; another Ipv4RoutingProtocol may too.
+    /// the link as having failed: see IsAuthoritative). The far end loses the
+    /// carrier too: its IslLinkMonitor, if it has one, marks the same link as
+    /// failed and fires PeerLinkChange (ns-3's Ipv4::SetDown cuts one side
+    /// only, so without this the far end would keep trusting a dead link,
+    /// #4). SwarmRoutingBase calls it from NotifyInterfaceUp/Down; another
+    /// Ipv4RoutingProtocol may too.
     void NotifyInterface(uint32_t interface, bool up);
 
     /// The peer of IPv4 interface `interface` (its address on the link's
@@ -102,12 +106,15 @@ private:
     int32_t InterfaceOf(const Link& link) const;
     const Link* LinkTowards(swarm::core::NodeAddress nextHop) const;
     const Link* LinkOn(uint32_t interface) const;
+    /// The far end of `link` went up or down (its monitor's NotifyInterface).
+    void FarEndChanged(Ptr<NetDevice> device, bool up);
 
     Ptr<Node> m_node;
     std::vector<Link> m_links;
     double m_alpha;
     bool m_trustAfterFailure;
     TracedCallback<Ipv4Address, bool> m_linkChangeTrace;
+    TracedCallback<Ipv4Address, bool> m_peerLinkChangeTrace;
 };
 
 }  // namespace ns3
