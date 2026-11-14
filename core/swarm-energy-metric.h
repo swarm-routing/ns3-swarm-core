@@ -33,6 +33,7 @@
 #include "swarm-link-metric.h"
 
 #include <cmath>
+#include <limits>
 #include <string_view>
 
 namespace swarm::core {
@@ -61,10 +62,11 @@ public:
 
     /// `floor` is the residual fraction below which a node costs no more
     /// (see energyHopCost). A non-finite or non-positive floor reads as
-    /// kDefaultFloor; one above 1 reads as 1 (every hop then costs 1).
-    explicit EnergyMetric(double floor = kDefaultFloor)
-        : floor_(!std::isfinite(floor) || floor <= 0.0 ? kDefaultFloor
-                                                       : (floor > 1.0 ? 1.0 : floor)) {}
+    /// kDefaultFloor; a positive one below the smallest normal double reads
+    /// as that (a subnormal's reciprocal overflows to infinity, and an empty
+    /// node must cost a finite amount); one above 1 reads as 1 (every hop
+    /// then costs 1).
+    explicit EnergyMetric(double floor = kDefaultFloor) : floor_(validFloor(floor)) {}
 
     /// 1 / max(obs.pathTime, obs.hops), 0 when both are <= 0: pathTime holds
     /// the sum of the hops' costs; a NaN pathTime counts as plain hops.
@@ -83,6 +85,12 @@ public:
     double floor() const { return floor_; }
 
 private:
+    static double validFloor(double floor) {
+        if (!std::isfinite(floor) || floor <= 0.0) return kDefaultFloor;
+        if (floor < std::numeric_limits<double>::min()) return std::numeric_limits<double>::min();
+        return floor > 1.0 ? 1.0 : floor;
+    }
+
     double floor_;
 };
 

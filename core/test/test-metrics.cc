@@ -83,6 +83,14 @@ void TestEnergyMetric(Checker& c) {
     c.check(EnergyMetric(0.0).floor() == 0.01 && EnergyMetric(-1.0).floor() == 0.01 &&
                 EnergyMetric(kNaN).floor() == 0.01 && EnergyMetric(kInf).floor() == 0.01,
             "a non-finite or non-positive floor reads as the default");
+    const EnergyMetric tiny(1e-320);  // subnormal: its reciprocal overflows
+    c.check(tiny.floor() == std::numeric_limits<double>::min() &&
+                std::isfinite(tiny.hopCost(energy(0.0))),
+            "a subnormal floor reads as the smallest normal: an empty node stays finite");
+    LinkObservation viaEmpty;
+    viaEmpty.hops = 1.0;
+    viaEmpty.pathTime = tiny.hopCost(energy(0.0));
+    c.check(tiny.pheromone(viaEmpty) > 0.0, "and its path keeps a positive pheromone");
     c.check(EnergyMetric(2.0).floor() == 1.0 && EnergyMetric(2.0).hopCost(energy(0.0)) == 1.0,
             "a floor above 1 reads as 1: every hop costs 1");
 
