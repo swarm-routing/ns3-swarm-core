@@ -33,7 +33,11 @@ without O(n²) rebuilds (#46). The node lifecycle (#43): `Shutdown`, `Crash`
 and `Start` on `SwarmRoutingBase`, with `SwarmLifecycleHelper` scripting the
 same failure for every arm. The energy-aware link metric (#2):
 `EnergyMetric` (`core/swarm-energy-metric.h`), AntHocNet's `energy` metric
-bit for bit, each relay pricing its own hop at 1 / residual energy.
+bit for bit, each relay pricing its own hop at 1 / residual energy. The fuzzy
+composite link metric (#3): `FuzzyMetric` (`core/swarm-fuzzy-metric.h`), a
+nine-rule delay x stability table whose quality divides inverse hop count,
+with `LinkObservation::stability` as its new input; every breakpoint and rule
+is a repo choice.
 
 ARA, BeeAdHoc and Termite have their ns-3 modules on `SwarmRoutingBase`
 (each repository's AGENTS.md); HOPNET's is planned. The plan is

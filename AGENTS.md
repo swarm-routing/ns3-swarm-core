@@ -27,8 +27,10 @@ core/               simulator-free primitives, namespace swarm::core — MIT OR 
                     #33), swarm-pheromone-table.{h,cc} (flat per-destination rows: row() views, forEach,
                     bestEntry; #45),
                     swarm-selection.{h,cc} (roulette, evaporationFactor), swarm-route-decision.h,
-                    swarm-link-metric.h (ILinkMetric), swarm-energy-metric.h (EnergyMetric: 1 / residual energy
-                    per hop, floored; AntHocNet's bit for bit; #2), swarm-observer.{h,cc} (IRouterObserver, KindName,
+                    swarm-link-metric.h (ILinkMetric; LinkObservation::stability, #3), swarm-energy-metric.h
+                    (EnergyMetric: 1 / residual energy per hop, floored; AntHocNet's bit for bit; #2),
+                    swarm-fuzzy-metric.h (FuzzyMetric: delay x stability rule table, quality / hops; #3),
+                    swarm-observer.{h,cc} (IRouterObserver, KindName,
                     CountingObserver -> RouterStats: bounded counters); CMakeLists.txt builds it alone, no ns-3
                     swarm-core-sources.cmake: the files of core/, listed once for both builds (#100)
 core/test/          the core tests, one function per primitive (MIT OR GPL-2.0-only); run by ctest and by test.py
