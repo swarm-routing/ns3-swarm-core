@@ -65,6 +65,12 @@ no edit on your side. The pin must be a commit that has
 does exactly this is built on every PR (`core/test/consumer/`,
 `tools/checks/check-core-consumer.sh`).
 
+## API stability
+
+What counts as the API, which change is breaking, what `kSwarmCoreApiVersion`
+means and how an API is deprecated: [docs/api-policy.md](docs/api-policy.md).
+Releases are 0.x until v1.0.0, which freezes the API (#83).
+
 <!-- org-sync:begin citing -->
 ## Releases & citing
 
