@@ -22,12 +22,12 @@ Update this table in the PR that changes a piece's users.
 | Roulette selection, `evaporationFactor` (`core/swarm-selection.h`) | Probabilistic next-hop choice and decay | ✓ | – | ✓ | ✓ | S7 |
 | `VisitedPath` (`core/swarm-visited-path.h`) | The bounded path an ant carries, with back-times (#125) | – | – | – | ✓ | S5 |
 | `EnergyMetric` (`core/swarm-energy-metric.h`) | Battery-aware link cost (1 / residual energy per hop) | – | ✓ | – | – | S8 |
-| `FuzzyMetric` (`core/swarm-fuzzy-metric.h`, #3) | Fuzzy delay × stability link quality | – | – | – | – | experimental (after 1.0.0) |
+| `FuzzyMetric` (`core/swarm-fuzzy-metric.h`, #3) | Fuzzy delay × stability link quality | – | – | – | – | experimental now; second user decided after 1.0.0 |
 | `SwarmRoutingBase` (`model/swarm-routing-base.h`) | ns-3 adapter base: sockets, held packets, previous hop, node lifecycle, observer trace sources | ✓ | ✓ | ✓ | ✓ | S10 |
 | `DeferredPacketQueue` (`model/swarm-deferred-packet-queue.h`) | Packets waiting for a route, with hold classes (#126) | ✓ | through the base | through the base | through the base | S10 |
 | `WifiLinkMonitor` (`model/swarm-wifi-link-monitor.h`) | Link breaks from Wi-Fi retry-limit drops, `OnTxFailure` (#128) | ✓ | ✓ | ✓ | ✓ | S10 |
 | `EnergyMetricHook` (`model/swarm-energy-metric-hook.h`) | `IEnergy` from an ns-3 `EnergySource` | – | ✓ | – | – | S10 |
-| `IslLinkMonitor` (`model/swarm-isl-link-monitor.h`, #4) | Inter-satellite links without hello | – | – | – | – | experimental (after 1.0.0) |
+| `IslLinkMonitor` (`model/swarm-isl-link-monitor.h`, #4) | Inter-satellite links without hello | – | – | – | – | experimental now; second user decided after 1.0.0 |
 | `SwarmLifecycleHelper` (`helper/swarm-lifecycle-helper.h`, #43) | Scripted shutdown, crash and restart, the same for every arm | benchmarks | benchmarks | benchmarks | benchmarks | benchmarks |
 | Testbench (`core/testbench/swarm-testbench.h`, #15) | A protocol core's trends tested without ns-3 | tests | tests | tests | tests | – |
 
@@ -54,5 +54,6 @@ and whether a second protocol adopts each is decided in a release after
 `EnergyMetric`, `EnergyMetricHook` and `VisitedPath` have one user until
 AntHocNet's port adopts them (S8, S10, S5 of swarm-routing/AntHocNet#1019).
 Any other piece still below two users when v1.0.0 is cut is made
-experimental the same way, or deprecated by the two-step rule in
+experimental the same way, before the cut. Deprecating a piece is a later
+step, in a minor release after 1.0.0, by the two-step rule in
 [api-policy.md](api-policy.md).
