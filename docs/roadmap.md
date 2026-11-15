@@ -23,6 +23,7 @@ this plan is a live query rather than a diagram that drifts:
 | v0.1.0 | [`release:v0.1.0`](https://github.com/swarm-routing/ns3-swarm-core/issues?q=is%3Aopen+label%3A%22release%3Av0.1.0%22) |
 | v0.2.0 | [`release:v0.2.0`](https://github.com/swarm-routing/ns3-swarm-core/issues?q=is%3Aopen+label%3A%22release%3Av0.2.0%22) |
 | v0.3.0 | [`release:v0.3.0`](https://github.com/swarm-routing/ns3-swarm-core/issues?q=is%3Aopen+label%3A%22release%3Av0.3.0%22) |
+| v0.4.0 | [`release:v0.4.0`](https://github.com/swarm-routing/ns3-swarm-core/issues?q=is%3Aopen+label%3A%22release%3Av0.4.0%22) |
 | v1.0.0 | [`release:v1.0.0`](https://github.com/swarm-routing/ns3-swarm-core/issues?q=is%3Aopen+label%3A%22release%3Av1.0.0%22) |
 | all epics | [`epic`](https://github.com/swarm-routing/ns3-swarm-core/issues?q=is%3Aopen+label%3Aepic) |
 
@@ -42,14 +43,16 @@ Majors are reserved for breaking changes; 1.0.0 is the stability promise.
 flowchart LR
     V01["<b>v0.1.0</b><br/>the shared<br/>module<br/>shipped 2026-11-11"]
     V02["<b>v0.2.0</b><br/>adapter<br/>complete<br/>shipped 2026-11-13"]
-    V03["<b>v0.3.0</b><br/>metrics and<br/>testbench"]
+    V03["<b>v0.3.0</b><br/>metrics and<br/>testbench<br/>shipped 2026-11-14"]
+    V04["<b>v0.4.0</b><br/>AntHocNet port<br/>primitives, C++23"]
     V10["<b>v1.0.0</b><br/>API frozen"]
 
-    V01 --> V02 --> V03 --> V10
+    V01 --> V02 --> V03 --> V04 --> V10
 
     style V01 fill:#e2f0ed,stroke:#0f7f70,stroke-width:2px
     style V02 fill:#e2f0ed,stroke:#0f7f70,stroke-width:2px
-    style V03 fill:#fff8e6,stroke:#c48f00
+    style V03 fill:#e2f0ed,stroke:#0f7f70,stroke-width:2px
+    style V04 fill:#fff8e6,stroke:#c48f00
     style V10 fill:#e8e6f8,stroke:#5b4fc4,stroke-width:2px
 ```
 
@@ -61,7 +64,11 @@ Zenodo version DOI
 **v0.2.0 shipped on 2026-11-13**
 ([release](https://github.com/swarm-routing/ns3-swarm-core/releases/tag/v0.2.0),
 Zenodo version DOI
-[10.5281/zenodo.24184704](https://doi.org/10.5281/zenodo.24184704)). v0.3.0
+[10.5281/zenodo.24184704](https://doi.org/10.5281/zenodo.24184704)).
+**v0.3.0 shipped on 2026-11-14**
+([release](https://github.com/swarm-routing/ns3-swarm-core/releases/tag/v0.3.0),
+Zenodo version DOI
+[10.5281/zenodo.24221311](https://doi.org/10.5281/zenodo.24221311)). v0.4.0
 is the next one.
 
 ## What blocks what
@@ -137,7 +144,8 @@ record of swarm-core's part:
 |---|---|
 | **v0.1.0** "the shared module" (shipped 2026-11-11) | The module released through the org `reusable-release.yml`: `make dist` builds and checks the module tarball ([#38](https://github.com/swarm-routing/ns3-swarm-core/issues/38)). Epic [#6](https://github.com/swarm-routing/ns3-swarm-core/issues/6)'s third criterion is met (ARA and BeeAdHoc `ns3/` green against `main`, swarm-routing/ARA#40, swarm-routing/BeeAdHoc#48). |
 | **v0.2.0** "adapter complete" (shipped 2026-11-13) | `SwarmRoutingBase` carries what the first gated protocols need: hold a packet with its protocol header and send one back to the previous hop ([#40](https://github.com/swarm-routing/ns3-swarm-core/issues/40), P1; ARA backtracking, Termite discovery); an optional entry lifetime on `DedupHistory` ([#33](https://github.com/swarm-routing/ns3-swarm-core/issues/33)); node shutdown, crash and restart with a helper that scripts failures identically for every arm ([#43](https://github.com/swarm-routing/ns3-swarm-core/issues/43)); the deferred queue and wire path without O(n²) rebuilds or per-packet allocation ([#46](https://github.com/swarm-routing/ns3-swarm-core/issues/46)). **Exit:** every change is additive, default output is byte-identical (same seed, same bytes), and every consumer (ARA, BeeAdHoc, the toy protocol in `test/`) is green. Released as tag `v0.2.0` (`2fb52d2`, 2026-11-13); the consumer check at that commit was not recorded, the nearest green consumer runs are named under "What blocks what". |
-| **v0.3.0** "metrics and testbench" | The metric seams and the testbench: energy-aware `ILinkMetric` ([#2](https://github.com/swarm-routing/ns3-swarm-core/issues/2)), fuzzy composite `ILinkMetric` ([#3](https://github.com/swarm-routing/ns3-swarm-core/issues/3)), ISL neighbour discovery without hello ([#4](https://github.com/swarm-routing/ns3-swarm-core/issues/4)), and a shared discrete-event testbench for protocol cores ([#15](https://github.com/swarm-routing/ns3-swarm-core/issues/15)). |
+| **v0.3.0** "metrics and testbench" (shipped 2026-11-14) | The metric seams and the testbench: energy-aware `ILinkMetric` ([#2](https://github.com/swarm-routing/ns3-swarm-core/issues/2)), fuzzy composite `ILinkMetric` ([#3](https://github.com/swarm-routing/ns3-swarm-core/issues/3)), ISL neighbour discovery without hello ([#4](https://github.com/swarm-routing/ns3-swarm-core/issues/4)), and a shared discrete-event testbench for protocol cores ([#15](https://github.com/swarm-routing/ns3-swarm-core/issues/15)). |
+| **v0.4.0** "AntHocNet port primitives, C++23" | What AntHocNet's port onto swarm-core ([#14](https://github.com/swarm-routing/ns3-swarm-core/issues/14), swarm-routing/AntHocNet#1019) needs from the shared code, and `core/` at the C++ standard of the ns-3 release swarm-core supports: pheromone evaporation with entry ages and a floor ([#124](https://github.com/swarm-routing/ns3-swarm-core/issues/124)), visited-path back-times and iteration ([#125](https://github.com/swarm-routing/ns3-swarm-core/issues/125)), hold classes in the deferred queue ([#126](https://github.com/swarm-routing/ns3-swarm-core/issues/126)), a peer map for multi-interface next hops ([#127](https://github.com/swarm-routing/ns3-swarm-core/issues/127)), one `OnTxFailure` hook per Wi-Fi retry-limit drop ([#128](https://github.com/swarm-routing/ns3-swarm-core/issues/128)), `core/` at C++23 ([#141](https://github.com/swarm-routing/ns3-swarm-core/issues/141)), and `core/` installed as a CMake package (#137, part of [#133](https://github.com/swarm-routing/ns3-swarm-core/issues/133)). **Exit:** every change is additive (`kSwarmCoreApiVersion` stays 2), default output is byte-identical against v0.3.0 (`swarm-core-seed`, the ARA and BeeAdHoc examples), each new primitive matches AntHocNet's behaviour bit for bit in its test, and the four protocol repositories' core tests pass against it; their `swarm-core.lock` moves to it after the release, which meets #124 and #125's last box. Requested by the maintainer on 2026-11-15. |
 | **v1.0.0** "API frozen" | `kSwarmCoreApiVersion` frozen with a written deprecation policy (#83; drafted in [`api-policy.md`](api-policy.md)); ARA and BeeAdHoc each release a version built on swarm-core with no API change; each has passed its comparator gates or published a written verdict ([#122](https://github.com/swarm-routing/ns3-swarm-core/issues/122), maintainer decision 2026-11-14); AntHocNet's `core/` and ns-3 adapter running on it ([#14](https://github.com/swarm-routing/ns3-swarm-core/issues/14): every protocol builds on swarm-core, maintainer decision 2026-11-12). The host contract for other simulators and real computers is **v2.0.0** ([#82](https://github.com/swarm-routing/ns3-swarm-core/issues/82); swarm-routing/.github#253). |
 
 Issue state, read from the tracker on 2026-11-13: #38 is closed and v0.1.0 has
