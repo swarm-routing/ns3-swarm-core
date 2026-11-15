@@ -25,7 +25,22 @@ permissions:
   packages: read
 
 jobs:
+  python-quality:
+    # ruff (org ruff.toml) + the tools/ scripts' self-tests under coverage,
+    # report-only; keeps the `python-coverage` artifact the `ci` scan imports,
+    # so SonarQube Cloud measures check-api-surface.py and check-cxx-standard.py
+    # by their self-tests (swarm-routing/.github#425).
+    uses: swarm-routing/.github/.github/workflows/reusable-python-ci.yml@main
+    with:
+      paths: tools
+      tests: tools/checks/tests/test_*.py
+      source: tools
+
   ci:
+    # After the Python job, whose coverage the scan imports; a ruff finding
+    # there must not stop the ns-3 build (the scan then warns: C++ coverage only).
+    needs: python-quality
+    if: ${{ !cancelled() }}
     uses: swarm-routing/.github/.github/workflows/reusable-ns3-ci.yml@main
     with:
       modules: swarm-core=.
@@ -46,6 +61,8 @@ jobs:
       # are not counted: they made 4303 conditions of 2247 new lines
       # (swarm-routing/.github#425, decision of 2026-11-15).
       coverage-branch-filter: true
+      # coverage.py's report of tools/ (the `python-quality` job) into the same analysis.
+      sonar-python-coverage: python-coverage
       determinism: swarm-core-seed --seed={seed}
       dual-roots: 'core/ tools/'
       core-roots: 'core/'

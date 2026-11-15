@@ -10,6 +10,7 @@
 | `core/testbench/` | the header-only discrete-event testbench for protocol cores' tests (#15): the C++ standard library and `core/` only, like the rest of `core/`; never part of the ns-3 module's headers | `MIT OR GPL-2.0-only` |
 | `core/bench/` | dev-only microbenchmarks of the primitives (built only with `-DSWARM_CORE_BENCH=ON`, never part of the ns-3 module or a release). They link Google Benchmark (Apache-2.0), fetched at a pinned commit at build time and never vendored or redistributed; they are the one `core/` path that includes something outside the standard library and `core/`, so the licence check's include rule skips them (`header-exclude` in `ci.yml`) | `MIT OR GPL-2.0-only` |
 | `tools/` | standalone scripts (checks, release, data handling) | `MIT OR GPL-2.0-only` |
+| `tools/checks/tests/` | the `tools/checks` scripts' self-tests run under coverage (`ci.yml` `python-quality`) | `MIT OR GPL-2.0-only` |
 | `model/`, `helper/`, `test/`, `examples/`, `CMakeLists.txt` | the `swarm-core` ns-3 contrib module | `GPL-2.0-only` |
 | `docs`, `README.md`, `AGENTS.md`, `CLAUDE.md` | docs | `GPL-2.0-only` |
 | everything else | | `GPL-2.0-only` |
