@@ -86,7 +86,8 @@ jobs:
 
   # The core microbenchmarks (core/bench/, #45). On a PR (#170): the base and
   # the head built on the same runner, run interleaved three times each, and
-  # the median CPU time per benchmark compared by tools/bench/bench_compare.py:
+  # the median CPU time per benchmark compared by tools/bench/bench_compare.py
+  # (the head is the PR's merge commit, so the delta is the PR's change alone):
   # the table in the job summary and in one PR comment (updated in place), a
   # ::warning:: for a benchmark more than 15 % slower. On main and in the merge
   # queue: the head alone. Report-only and not a required check: shared runners
@@ -95,6 +96,11 @@ jobs:
     if: inputs.ns3-versions == ''
     runs-on: ubuntu-24.04
     timeout-minutes: 25
+    # A newer push to the PR cancels this run, so an older run never
+    # overwrites a newer comparison in the comment.
+    concurrency:
+      group: bench-${{ github.event.pull_request.number || github.ref }}
+      cancel-in-progress: ${{ github.event_name == 'pull_request' }}
     permissions:
       contents: read
       pull-requests: write  # the delta comment (same-repository PRs only)
@@ -148,6 +154,7 @@ jobs:
         if: github.event_name == 'pull_request'
         env:
           HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+          MERGE_SHA: ${{ github.sha }}
           BASE_SHA: ${{ github.event.pull_request.base.sha }}
         run: |
           shopt -s nullglob
@@ -156,7 +163,7 @@ jobs:
           {
             cat bench/delta.md
             echo
-            echo "CPU: $(grep -m1 'model name' /proc/cpuinfo | cut -d: -f2- | sed 's/^ *//'). Head $HEAD_SHA, base $BASE_SHA."
+            echo "CPU: $(grep -m1 'model name' /proc/cpuinfo | cut -d: -f2- | sed 's/^ *//'). Head: the merge of $HEAD_SHA into the base ($MERGE_SHA); base $BASE_SHA."
           } > bench/comment.md
           cat bench/comment.md >> "$GITHUB_STEP_SUMMARY"
       - name: Post or update the delta comment (PR from this repository only)

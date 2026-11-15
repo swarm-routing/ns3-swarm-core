@@ -91,6 +91,8 @@ def markdown(rows, threshold, title, nbase, nhead):
     for name, b, h, delta, flag in rows:
         if b is None:
             out.append(f"| `{name}` | | {fmt_ns(h)} | | new |")
+        elif h is not None and delta is None:  # a zero base: no ratio
+            out.append(f"| `{name}` | {fmt_ns(b)} | {fmt_ns(h)} | n/a | |")
         elif h is None:
             out.append(f"| `{name}` | {fmt_ns(b)} | | | removed |")
         else:
@@ -199,6 +201,10 @@ def self_test():
             "(+20.0 %, threshold +15 %)"
         ], warn
         assert out.read_text().startswith("## T\n"), out.read_text()
+        # A zero base time has no ratio: the row says n/a and is not flagged.
+        zero = compare({"BM_Z": [0.0]}, {"BM_Z": [1.0]}, 15.0)
+        assert zero[0][3] is None and not zero[0][4], zero
+        assert "| `BM_Z` | 0.0 ns | 1.0 ns | n/a | |" in markdown(zero, 15.0, "T", 1, 1)
         # No base at all (the base predates core/bench): every row is new.
         rows = compare({}, h, 15.0)
         assert all(r[1] is None and not r[4] for r in rows)
