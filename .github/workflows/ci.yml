@@ -26,7 +26,7 @@ permissions:
 
 jobs:
   ci:
-    uses: swarm-routing/.github/.github/workflows/reusable-ns3-ci.yml@main
+    uses: swarm-routing/.github/.github/workflows/reusable-ns3-ci.yml@claude/sonar-compile-commands
     with:
       modules: swarm-core=.
       ns3-versions: ${{ inputs.ns3-versions || '["latest"]' }}
