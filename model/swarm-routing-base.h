@@ -308,6 +308,13 @@ protected:
     /// once its link has failed (hello takes over again) or with the
     /// attribute off.
     bool IsLinkStateNeighbor(Ipv4Address neighbor) const;
+    /// One-hop broadcast of a control message on IPv4 interface `interface`
+    /// only, to its subnet broadcast, as BroadcastControl sends on each
+    /// interface. For an adapter that orders the fan-out itself or sends on
+    /// some interfaces only (AntHocNet's point-to-point hello throttle, #166).
+    /// False, and nothing sent, when the node is down or holds no control
+    /// socket on that interface.
+    bool BroadcastControlOn(Ptr<Packet> p, uint32_t interface);
     /// One-hop unicast of a control message to a neighbour.
     void UnicastControl(Ptr<Packet> p, Ipv4Address neighbor);
     /// Forwards a data packet to `next` (stamps SwarmPrevHopTag).
@@ -414,12 +421,16 @@ protected:
     /// The node's EnergyMetricHook, else a null port.
     const swarm::core::IEnergy& Energy() const;
 
-    /// Where a packet to next hop `next` leaves: the IPv4 interface (-1 when
-    /// the node has none up) and the gateway, by the three rules SetPeerRoute
-    /// describes (#127). Every send of the base resolves through it; an
-    /// adapter that builds its own routes (one overriding RouteOutput or
-    /// RouteInput, as AntHocNet's does) resolves its next hops alike, so its
-    /// data and its control leave through the same interface.
+    /// Where a packet to next hop `next` leaves: the IPv4 interface and the
+    /// gateway, by the three rules SetPeerRoute describes (#127). Every send of
+    /// the base resolves through it; an adapter that builds its own routes (one
+    /// overriding RouteOutput or RouteInput, as AntHocNet's does) resolves its
+    /// next hops alike, so its data and its control leave through the same
+    /// interface. `ifIdx` is -1 only when the node has no control socket at
+    /// all; it is not an availability check: a peer-map entry outlives its
+    /// interface going down, so `ifIdx` can name an interface that is down
+    /// (the base's own sends then find no socket on it and send nothing). An
+    /// adapter building a route from it checks Ipv4::IsUp(ifIdx) itself.
     struct NextHopRoute {
         int32_t ifIdx = -1;
         Ipv4Address gateway;

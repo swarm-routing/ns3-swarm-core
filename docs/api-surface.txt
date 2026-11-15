@@ -497,6 +497,7 @@ ns3 function ns3::SwarmRoutingBase::AssignStreams public virtual: int64_t (int64
 ns3 function ns3::SwarmRoutingBase::BeaconSuppressed protected: bool (uint32_t) const
 ns3 function ns3::SwarmRoutingBase::BroadcastBeacon protected: uint32_t (Ptr<Packet>)
 ns3 function ns3::SwarmRoutingBase::BroadcastControl protected: void (Ptr<Packet>)
+ns3 function ns3::SwarmRoutingBase::BroadcastControlOn protected: bool (Ptr<Packet>, uint32_t)
 ns3 function ns3::SwarmRoutingBase::ClearPeerRoute protected: void (Ipv4Address)
 ns3 function ns3::SwarmRoutingBase::Clock protected: const swarm::core::IClock &() const
 ns3 function ns3::SwarmRoutingBase::ControlPort protected virtual: uint16_t () const = 0

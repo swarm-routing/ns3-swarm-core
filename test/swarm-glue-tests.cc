@@ -155,6 +155,9 @@ public:
         Observer().onControlSent(kMessage, false, size);
     }
 
+    /// A hello on one interface only (BroadcastControlOn, #166).
+    bool HelloOn(uint32_t iface) { return BroadcastControlOn(Create<Packet>(4), iface); }
+
     /// SetPeerRoute is a protected service; the test sets entries through this.
     bool PeerRoute(Ipv4Address canonical, uint32_t iface, Ipv4Address link) {
         return SetPeerRoute(canonical, iface, link);
@@ -2426,6 +2429,36 @@ private:
     }
 };
 
+/// BroadcastControlOn (#166): a broadcast on one interface of a node with two
+/// reaches only the neighbour on that link; an interface with no socket sends
+/// nothing.
+class BroadcastOnTestCase : public TestCase {
+public:
+    BroadcastOnTestCase() : TestCase("glue: BroadcastControlOn sends on one interface only") {}
+
+private:
+    void DoRun() override {
+        SwarmCoreSeed(1);
+        Line line("10Mbps");
+        Ptr<Node> n0 = line.nodes.Get(0);
+        Ptr<Node> n1 = line.nodes.Get(1);
+        Ptr<Node> n2 = line.nodes.Get(2);
+        bool toN2 = false;
+        bool nowhere = true;
+        Simulator::Schedule(Seconds(0.5), [&]() {
+            toN2 = Toy(n1)->HelloOn(2);     // n1's interface toward n2
+            nowhere = Toy(n1)->HelloOn(7);  // no such interface
+        });
+        Simulator::Stop(Seconds(1));
+        Simulator::Run();
+        NS_TEST_EXPECT_MSG_EQ(toN2, true, "sent on interface 2");
+        NS_TEST_EXPECT_MSG_EQ(nowhere, false, "no socket on interface 7: nothing sent");
+        NS_TEST_EXPECT_MSG_EQ(Toy(n2)->controlLog.size(), 1u, "n2 heard it");
+        NS_TEST_EXPECT_MSG_EQ(Toy(n0)->controlLog.size(), 0u, "n0, on interface 1, did not");
+        Simulator::Destroy();
+    }
+};
+
 /// The peer map's bounds and lifetime (#127): one entry per canonical
 /// address and per (interface, link address), MaxPeerRoutes, ClearPeerRoute,
 /// cleared at shutdown.
@@ -2676,6 +2709,7 @@ std::vector<TestCase*> MakeGlueTestCases() {
             new PeerMapTestCase(true),
             new PeerMapTestCase(false),
             new PeerMapBoundsTestCase,
+            new BroadcastOnTestCase,
             new PurgeOnUseTestCase(true),
             new PurgeOnUseTestCase(false),
             new EnergyHookTestCase,

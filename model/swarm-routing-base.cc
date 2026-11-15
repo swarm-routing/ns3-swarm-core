@@ -741,6 +741,19 @@ void SwarmRoutingBase::BroadcastControl(Ptr<Packet> p) {
     }
 }
 
+bool SwarmRoutingBase::BroadcastControlOn(Ptr<Packet> p, uint32_t interface) {
+    if (IsDown()) {
+        return false;
+    }
+    for (const auto& kv : m_sockets) {
+        if (kv.ifIndex == static_cast<int32_t>(interface)) {
+            kv.socket->SendTo(p, 0, InetSocketAddress(kv.iface.GetBroadcast(), ControlPort()));
+            return true;
+        }
+    }
+    return false;
+}
+
 uint32_t SwarmRoutingBase::BroadcastBeacon(Ptr<Packet> p) {
     if (IsDown()) {
         return 0;
