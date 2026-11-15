@@ -141,6 +141,11 @@ may break the API, above):
 
 ```json
 {
+  "default-registry": {
+    "kind": "git",
+    "repository": "https://github.com/microsoft/vcpkg",
+    "baseline": "<a microsoft/vcpkg commit>"
+  },
   "registries": [
     {
       "kind": "git",
@@ -153,7 +158,7 @@ may break the API, above):
 ```
 
 ```json
-{ "dependencies": ["swarm-core"], "overrides": [{ "name": "swarm-core", "version": "0.3.0" }] }
+{ "dependencies": ["swarm-core"], "overrides": [{ "name": "swarm-core", "version": "0.4.0" }] }
 ```
 
 then `find_package(swarm-core CONFIG REQUIRED)` and `swarm::core`, as above,
