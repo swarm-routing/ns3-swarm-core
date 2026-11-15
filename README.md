@@ -220,6 +220,7 @@ deprecated: [docs/api-policy.md](docs/api-policy.md).
 `FuzzyMetric` and `IslLinkMonitor` (with the base API only it drives) ship
 as **experimental**, outside that promise until a second protocol adopts
 them (api-policy "Experimental", #160).
+Which protocol uses which piece: [docs/adopters.md](docs/adopters.md).
 
 <!-- org-sync:begin citing -->
 ## Releases & citing

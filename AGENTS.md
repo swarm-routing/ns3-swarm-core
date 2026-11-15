@@ -359,6 +359,9 @@ Code says the plugin is missing (it was called
 | Take open pull requests from review to merge: CI, mergeable state and unresolved review threads in one view, each finding verified and fixed or answered, then merged when green (auto-merge where the repository has a merge queue) | `swarm-routing/.github` `tools/pr-status/pr_status.py` | `pr-shepherd` |
 | Measure what a Claude Code session loads from the agent files (`CLAUDE.md` and its `@` imports, or `AGENTS.md` alone), or where a finished Claude Code session's tokens went, before cutting or adding agent text | `swarm-routing/skills` `tools/token-audit/token_audit.py` | `token-audit` |
 | Register a repository for the OpenSSF Best Practices badge, propose its answers and check they stay current | `swarm-routing/.github` `tools/bestpractices/bestpractices.py` | `bestpractices` |
+| Check or bump the release a repository builds on (`swarm-core.lock`, `ns3-tools.lock`), the places that name it, and the `swarm-core / pin` check; org-bot's bump PR first, nothing typed | `swarm-routing/.github` `tools/checks/release_lock.py`, `tools/checks/check-swarm-core-pin.py` | `dependency-bump` |
+| Cut a release on the maintainer's request: readiness (the ladder row, the `release:vX.Y.Z` scope), dry-run, bump, merge, then the aftercare (the Zenodo DOI, the site, consumers' locks, the vcpkg port, PyPI) | `swarm-routing/.github` `tools/release/release_check.py`, `tools/zenodo/zenodo.py` | `release` |
+| Record a reviewed SonarQube Cloud false positive (or an accepted finding) where the quality gate reads it, never by exclusion or in the UI | `swarm-routing/.github` `tools/sonar-triage/sonar_triage.py` | `sonar-triage` |
 
 A skill only this repository uses lives in its own `.claude/skills/`; a skill
 two repositories need moves to the plugin. Skills that file, cite and extract
