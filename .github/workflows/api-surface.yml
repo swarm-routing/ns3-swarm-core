@@ -1,0 +1,58 @@
+# Copyright (c) 2026 Daniel Joppi (https://github.com/swarm-routing)
+# SPDX-License-Identifier: GPL-2.0-only
+name: API surface
+
+# The public API as a committed, generated record (docs/api-surface.txt) and
+# its guard (tools/checks/check-api-surface.py; docs/api-policy.md "The API
+# record"): the record must match the sources, and a PR that removes or
+# changes a listed item must be marked breaking (`!` in its title or a
+# `BREAKING CHANGE:` footer). Report-only until the v1.0.0 freeze (#83): a
+# finding is a warning and the job stays green; the freeze PR turns on
+# --strict and proposes the check as required through settings-as-code.
+# The check name is `api-surface`; no `paths:` filter, so it can become a
+# required check without an edit.
+on:
+  push:
+    branches: [main]
+  pull_request:
+    types: [opened, synchronize, reopened, edited]  # edited: a title that gains or loses its `!`
+  merge_group:
+
+permissions:
+  contents: read
+
+jobs:
+  api-surface:
+    name: api-surface
+    runs-on: ubuntu-24.04  # its clang++-18 parses the headers
+    timeout-minutes: 15
+    steps:
+      - name: Harden the runner (audit egress)
+        uses: step-security/harden-runner@1d88384fd173af6ecb012dfd0264a306b711241a # v2.22.4
+        timeout-minutes: 2
+        with:
+          egress-policy: audit
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+          fetch-depth: 0  # the base commit's record
+      - name: Self-test
+        run: python3 -I tools/checks/check-api-surface.py --self-test
+      - name: Pull the ns-3 image
+        timeout-minutes: 5
+        run: docker pull --quiet ghcr.io/swarm-routing/ns3-dev:latest-debug
+      - name: Check the record
+        env:
+          TITLE: ${{ github.event.pull_request.title }}
+          BODY: ${{ github.event.pull_request.body }}
+          BASE: ${{ github.event.pull_request.base.sha }}
+        run: |
+          args=()
+          if [ -n "$BASE" ] && git cat-file -e "$BASE:docs/api-surface.txt" 2>/dev/null; then
+            git show "$BASE:docs/api-surface.txt" > "$RUNNER_TEMP/base-api-surface.txt"
+            args+=(--base-snapshot "$RUNNER_TEMP/base-api-surface.txt")
+          fi
+          printf '%s\n' "$BODY" > "$RUNNER_TEMP/pr-body.md"
+          python3 -I tools/checks/check-api-surface.py check \
+            --ns3-image ghcr.io/swarm-routing/ns3-dev:latest-debug \
+            --title "$TITLE" --body-file "$RUNNER_TEMP/pr-body.md" "${args[@]}"

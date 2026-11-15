@@ -37,6 +37,28 @@ release unchanged, with deprecation warnings not treated as errors
 (ABI) compatibility is not promised; every consumer compiles swarm-core from
 source.
 
+### The API record
+
+[`api-surface.txt`](api-surface.txt) lists the table's C++ and ns-3 items one
+per line: every name in `swarm::core` and `swarm::core::testbench` with its
+signature, default arguments, enumerator values and constant initialisers;
+the public and protected members of the module's classes; every `TypeId`
+with its parent, every attribute with its flags, initial value and checker,
+and every trace source with its callback signature. It is generated
+(`tools/checks/check-api-surface.py generate`, `make api-surface`) from clang's
+AST of the headers and from the `GetTypeId` registrations, never edited by
+hand. Behaviour, the CMake package and default output are API too but are not
+in the record: the tests and the consumer checks cover them.
+
+The `api-surface` check (`.github/workflows/api-surface.yml`) regenerates it
+on every PR: a PR that adds to the API commits the new record (a minor), and
+a PR that removes or changes a line of the base's record must be marked
+breaking, a `!` before the colon of its title (`feat!: ...`) or a
+`BREAKING CHANGE:` footer (a major after 1.0). A deprecation adds a
+`deprecated` or `*-support` line and changes none, so it reads as the minor
+it is. Until the v1.0.0 freeze the check is report-only (a warning); the
+freeze PR makes it strict.
+
 ## C++ standard
 
 `core/` targets the C++ standard of the ns-3 release swarm-core supports:
