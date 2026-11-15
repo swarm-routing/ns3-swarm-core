@@ -14,8 +14,10 @@ namespace ns3 {
 /// helpers). v1.0.0 froze it at 2, the API every 0.2-0.4 release shipped
 /// additively: it holds for all of 1.x and moves by one per major only
 /// (docs/api-policy.md "kSwarmCoreApiVersion").
-// TODO(freeze, #83): confirm 2 with the maintainer before merging (the
-// alternative, 1 = the major, would break every consumer's check for nothing).
+// The rule (maintainer, 2026-11-15): it increases when the API changes in a
+// breaking way, and is kept otherwise. Nothing broke since 2: 0.3 and 0.4
+// were additive, and marking FuzzyMetric and IslLinkMonitor experimental
+// removed nothing.
 constexpr uint32_t kSwarmCoreApiVersion = 2;
 
 /// Seeds the simulator's streams the org way: seed 1, run `seed`, so a fixed

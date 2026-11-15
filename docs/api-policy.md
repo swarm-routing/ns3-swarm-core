@@ -143,10 +143,11 @@ written for.
 
 - Before 1.0 it moved with each breaking change (1: the seed helper; 2: the
   primitives and the glue).
-- v1.0.0 froze it at **2**, the value of the API every release from v0.2.0
-  to v0.4.0 shipped (each additive), so no consumer's check moved; the test in
-  `test/swarm-core-test-suite.cc` asserts it. <!-- TODO(freeze): the
-  maintainer confirms 2 (rather than 1, the major) -->
+- The rule (maintainer decision 2026-11-15): it increases when the API
+  changes in a breaking way, and is kept otherwise. v1.0.0 kept it at **2**:
+  nothing broke since 2 (v0.3.0 and v0.4.0 were additive, and marking the
+  experimental pieces removed nothing), so no consumer's check moved; the
+  test in `test/swarm-core-test-suite.cc` asserts it.
 - After 1.0 it changes only in a major release, by one per major. Minor and
   patch releases never change it: an additive feature is detected by the
   release a consumer pins, not by this constant.
@@ -202,21 +203,6 @@ computers, is **v2.0.0** (epic #82; swarm-routing/.github#253). Its parts
 (#71, a node-driver contract; #72, `NodeAddress` as an opaque node id; #73,
 link signals as one port with fallbacks) are breaking by design and are not
 part of 1.0: in 1.x, `NodeAddress` and the ports keep the form v1.0.0 ships.
-
-## Deprecated at the freeze
-
-Pieces with fewer than two protocol users when v1.0.0 shipped (golden rule
-11, maintainer decision 2026-11-15; [adopters.md](adopters.md)) are
-deprecated in the last 0.x minor and removed no earlier than 2.0.0:
-
-<!-- TODO(freeze, two-users decision on #3, #4, swarm-routing/AntHocNet#1019):
-- `FuzzyMetric` and its parameters (`core/swarm-fuzzy-metric.h`, #3): no user;
-  AntHocNet has no fuzzy metric to port. Recommended: deprecate.
-- `IslLinkMonitor` and `SwarmRoutingBase`'s `IslHelloSuppression` (#4): no
-  user; AntHocNet's inline ISL code is its origin and could adopt it in S10,
-  which gives one user. Recommended: deprecate, unless the maintainer records
-  an exception for the satellite regime.
--->
 
 ## Before 1.0 (0.x)
 

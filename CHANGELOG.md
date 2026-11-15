@@ -3,8 +3,10 @@
 of 1.x; the API is recorded in `docs/api-surface.txt` and the required
 `api-surface` check fails a PR that removes or changes an item without a
 breaking mark; a breaking change waits for 2.0.0, after a deprecation of at
-least two minor releases (`docs/api-policy.md`). Deprecated at the freeze:
-<!-- TODO(freeze): FuzzyMetric (#3) and IslLinkMonitor (#4), per the two-users decision. -->
+least two minor releases (`docs/api-policy.md`). Experimental, outside the
+promise until a second protocol adopts them: `FuzzyMetric` (#3) and
+`IslLinkMonitor` with `SwarmRoutingBase`'s `IslHelloSuppression`, `OnLinkUp`,
+`BeaconSuppressed` and `IsLinkStateNeighbor` (#4, #160).
 
 ## v0.4.0 (2026-11-15)
 

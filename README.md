@@ -217,7 +217,9 @@ generated from the headers and the `TypeId`s; the required `api-surface`
 check fails a PR that removes or changes an item without a breaking mark.
 What counts as the API, which change is breaking and how an API is
 deprecated: [docs/api-policy.md](docs/api-policy.md).
-<!-- TODO(freeze): the pieces deprecated at the freeze (#3, #4 decision). -->
+`FuzzyMetric` and `IslLinkMonitor` (with the base API only it drives) ship
+as **experimental**, outside that promise until a second protocol adopts
+them (api-policy "Experimental", #160).
 
 <!-- org-sync:begin citing -->
 ## Releases & citing
