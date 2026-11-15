@@ -208,6 +208,8 @@ does; they link `swarm::core`, so the header is already on their include path.
 What counts as the API, which change is breaking, what `kSwarmCoreApiVersion`
 means and how an API is deprecated: [docs/api-policy.md](docs/api-policy.md).
 Releases are 0.x until v1.0.0, which freezes the API (#83).
+Which protocol uses which piece, and which pieces still have fewer than two
+users before that freeze: [docs/adopters.md](docs/adopters.md).
 
 <!-- org-sync:begin citing -->
 ## Releases & citing
