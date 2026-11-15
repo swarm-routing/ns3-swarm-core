@@ -91,6 +91,37 @@ into the frozen API, once a release decides its second user, is a minor;
 moving a frozen item out of it is a breaking change, and the check reports it
 so.
 
+## Experimental
+
+A few pieces ship in the module but are **outside the 1.0 SemVer promise**:
+no protocol uses them yet, so their shape is not proven by two users (golden
+rule 11), and whether a second protocol adopts them is decided in a release
+after 1.0.0 (maintainer decision 2026-11-15, #160). They were marked before
+v1.0.0, while nothing was frozen yet (0.x), and nothing was removed, so the
+marking broke no consumer; from v1.0.0 on, marking a frozen item experimental
+is a breaking change like any removal (below). From v1.0.0 any minor release may
+change or remove them, with a changelog entry and an issue in each consumer
+that uses one. A consumer that relies on one pins a release.
+
+| Piece | Why experimental |
+|---|---|
+| `FuzzyMetric`, `FuzzyMetricParams`, `FuzzyMemberships`, `fuzzyMemberships`, `FuzzyTerm`, `kFuzzyTerms` (`core/swarm-fuzzy-metric.h`, #3) | no protocol selects it; AntHocNet has no fuzzy metric to port; its A/B (#132) waits for one |
+| `IslLinkMonitor` (`model/swarm-isl-link-monitor.h`, #4), with its attributes and trace sources | no protocol uses it; AntHocNet's own ISL code, where it came from, may adopt it after its port |
+| `SwarmRoutingBase`'s `IslHelloSuppression` attribute, `OnLinkUp`, `BeaconSuppressed`, `IsLinkStateNeighbor` | the base API that only `IslLinkMonitor` drives |
+
+`LinkObservation::stability` is not experimental: it is a neutral field of
+the frozen observation (NaN, "no evidence", by default). `SwarmMonitorHelper`
+and `SwarmRoutingBase::Neighbors()` are frozen; that they install or read an
+`IslLinkMonitor` on point-to-point nodes is part of the experimental piece's
+behaviour.
+
+In [`api-surface.txt`](api-surface.txt) these items are recorded with an
+`experimental ` prefix and the `api-surface` check does not guard them (the
+list is `EXPERIMENTAL` in `tools/checks/check-api-surface.py`). Moving one
+into the frozen API, once a release decides its second user, is a minor;
+moving a frozen item out of it is a breaking change, and the check reports it
+so.
+
 ## C++ standard
 
 `core/` targets the C++ standard of the ns-3 release swarm-core supports:

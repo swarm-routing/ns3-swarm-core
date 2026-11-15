@@ -2,8 +2,8 @@
 // SPDX-License-Identifier: MIT OR GPL-2.0-only
 //
 // FuzzyMetric: the fuzzy composite ILinkMetric (#3). Experimental: outside
-// the 1.0 SemVer promise until a protocol adopts it (docs/api-policy.md
-// "Experimental", #160). It judges a path by
+// the 1.0 SemVer promise until a release decides its second protocol user
+// (docs/api-policy.md "Experimental", #160). It judges a path by
 // three signals a protocol already has, through a small explicit rule table:
 // its delay and its link stability set a quality in [0, 1], and its hop count
 // divides it. New here, written fresh: no protocol of the org ships a fuzzy
