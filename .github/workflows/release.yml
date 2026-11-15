@@ -14,7 +14,9 @@ name: Release
 # The `image` job then publishes ghcr.io/swarm-routing/ns3-swarm-core:v<ver>-{optimized,debug}
 # (named after the repository, swarm-routing/.github#370; v0.1.0 and v0.2.0 are
 # in the frozen ns3-swarm-core-ns3)
-# with the module built in (CONTRIBUTING "Images").
+# with the module built in (CONTRIBUTING "Images"). After the publish, the
+# reusable release's `vcpkg` job opens the `swarm-core` port bump PR in
+# swarm-routing/vcpkg-registry (vcpkg-ports, swarm-routing/.github#439).
 on:
   workflow_dispatch:
     inputs:
@@ -46,6 +48,7 @@ jobs:
     with:
       mode: ${{ inputs.mode }}   # empty on push: release
       increment: ${{ inputs.increment != 'auto' && inputs.increment || '' }}  # '' on push and for auto (swarm-routing/.github#211)
+      vcpkg-ports: swarm-core   # after publish, the org bot opens the port bump PR in swarm-routing/vcpkg-registry (#135)
     secrets:
       BOT_APP_ID: ${{ secrets.BOT_APP_ID }}
       BOT_APP_PRIVATE_KEY: ${{ secrets.BOT_APP_PRIVATE_KEY }}
