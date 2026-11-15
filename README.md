@@ -41,21 +41,44 @@ in a minor release, announced in an issue in each consumer
 ([docs/api-policy.md](docs/api-policy.md#c-standard)). Added by another
 project, its `CMakeLists.txt` defines the static library `swarm_core` (alias
 `swarm::core`) and nothing else: no test target, no entry in your `ctest`, and
-its strict warnings stay on its own sources, never as errors. Pin a commit:
+its strict warnings stay on its own sources, never as errors. Fetch a
+**release** (#134): its asset `swarm-core-<ver>.tar.gz`, checked against the
+SHA256 the release's `SHA256SUMS` lists for it, never typed by hand:
 
 ```cmake
 include(FetchContent)
+set(swarm_core_timestamp)   # DOWNLOAD_EXTRACT_TIMESTAMP needs CMake 3.24+
+if(CMAKE_VERSION VERSION_GREATER_EQUAL 3.24)
+  set(swarm_core_timestamp DOWNLOAD_EXTRACT_TIMESTAMP FALSE)
+endif()
 FetchContent_Declare(swarm_core
-  GIT_REPOSITORY https://github.com/swarm-routing/ns3-swarm-core.git
-  GIT_TAG <the 40-character commit you pin>
+  URL https://github.com/swarm-routing/ns3-swarm-core/releases/download/v0.3.0/swarm-core-0.3.0.tar.gz
+  URL_HASH SHA256=<the asset's line in the release's SHA256SUMS>
+  ${swarm_core_timestamp}
   SOURCE_SUBDIR core)
 FetchContent_MakeAvailable(swarm_core)
 target_link_libraries(my_protocol_core PUBLIC swarm::core)   # #include "swarm-ports.h", ...
 ```
 
+The org's protocol repositories keep those values in a release lock,
+`swarm-core.lock`, written and verified by swarm-routing/.github
+`tools/checks/release_lock.py` and bumped by org-bot when a newer release is
+out; `core/CMakeLists.txt` reads it (swarm-routing/ARA's is an example), and
+swarm-routing/.github CONTRIBUTING "Dependencies" has the whole convention.
+
+For development against an unreleased swarm-core, a commit instead (the
+`protocol-review` check flags it in a repository that consumes releases):
+
+```cmake
+FetchContent_Declare(swarm_core
+  GIT_REPOSITORY https://github.com/swarm-routing/ns3-swarm-core.git
+  GIT_TAG <the 40-character commit>
+  SOURCE_SUBDIR core)
+```
+
 With a checkout on disk, `add_subdirectory(/path/to/ns3-swarm-core/core swarm-core)`
-does the same. A file added to `core/` then reaches you with the next pin, with
-no edit on your side. The pin must be a commit that has
+does the same. A file added to `core/` then reaches you with the next release
+(or commit), with no edit on your side; a commit must have
 `core/swarm-core-sources.cmake` (any after v0.1.0's). `core/` is
 `MIT OR GPL-2.0-only` ([LICENSING.md](LICENSING.md)); a scratch project that
 does exactly this is built on every PR (`core/test/consumer/`,
