@@ -205,9 +205,19 @@ does; they link `swarm::core`, so the header is already on their include path.
 
 ## API stability
 
-What counts as the API, which change is breaking, what `kSwarmCoreApiVersion`
-means and how an API is deprecated: [docs/api-policy.md](docs/api-policy.md).
-Releases are 0.x until v1.0.0, which freezes the API (#83).
+**From v1.0.0 the API is frozen** (#83): a consumer rebuilds against any
+1.x release unchanged. Additions come in minor releases, fixes in patches; a
+breaking change waits for 2.0.0, and anything retired is deprecated first,
+for at least two minor releases, with its replacement in the same release.
+`ns3::kSwarmCoreApiVersion` is 2 for all of 1.x, so a consumer can
+`static_assert` it.
+
+The API is recorded item by item in [docs/api-surface.txt](docs/api-surface.txt),
+generated from the headers and the `TypeId`s; the required `api-surface`
+check fails a PR that removes or changes an item without a breaking mark.
+What counts as the API, which change is breaking and how an API is
+deprecated: [docs/api-policy.md](docs/api-policy.md).
+<!-- TODO(freeze): the pieces deprecated at the freeze (#3, #4 decision). -->
 
 <!-- org-sync:begin citing -->
 ## Releases & citing

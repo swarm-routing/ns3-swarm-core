@@ -7,10 +7,15 @@
 
 namespace ns3 {
 
-/// The swarm-core API version. Protocols built against `main` read it to
-/// detect a breaking change (golden rule 12); it moves with each one.
-/// 1: the seed helper. 2: the core/ primitives and the ns-3 glue
-/// (SwarmRoutingBase, DeferredPacketQueue, the link monitors, the helpers).
+/// The swarm-core API version, for a consumer's compile-time check
+/// (`static_assert(ns3::kSwarmCoreApiVersion == 2)`). Before 1.0 it moved with
+/// each breaking change: 1, the seed helper; 2, the core/ primitives and the
+/// ns-3 glue (SwarmRoutingBase, DeferredPacketQueue, the link monitors, the
+/// helpers). v1.0.0 froze it at 2, the API every 0.2-0.4 release shipped
+/// additively: it holds for all of 1.x and moves by one per major only
+/// (docs/api-policy.md "kSwarmCoreApiVersion").
+// TODO(freeze, #83): confirm 2 with the maintainer before merging (the
+// alternative, 1 = the major, would break every consumer's check for nothing).
 constexpr uint32_t kSwarmCoreApiVersion = 2;
 
 /// Seeds the simulator's streams the org way: seed 1, run `seed`, so a fixed

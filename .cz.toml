@@ -9,6 +9,7 @@ name = "cz_conventional_commits"
 version = "0.4.0"
 version_scheme = "semver"
 tag_format = "v$version"
-major_version_zero = true
+# false from v1.0.0: a breaking change (`!`, BREAKING CHANGE:) now bumps the major (#83)
+major_version_zero = false
 update_changelog_on_bump = true
 version_files = ["VERSION", "CITATION.cff:^version:"]

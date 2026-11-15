@@ -1,9 +1,11 @@
 # API and deprecation policy
 
-What swarm-core promises its consumers from v1.0.0 on, how that promise is
-versioned, and how an API is retired. It is the written policy the v1.0.0
-row of the [roadmap](roadmap.md) asks for (#83). Until v1.0.0 is released,
-the 0.x rules at the end apply.
+**v1.0.0 freezes swarm-core's API** (#83; released <!-- TODO(freeze): date
+and the version DOI read from Zenodo -->). This page is what swarm-core
+promises its consumers from then on, how that promise is versioned, and how
+an API is retired. It is the written policy the v1.0.0 row of the
+[roadmap](roadmap.md) asked for. The 0.x rules at the end are kept as the
+record of what held before.
 
 The consumers today are the protocol repositories that build on swarm-core
 (swarm-routing/ARA, swarm-routing/BeeAdHoc, swarm-routing/Termite,
@@ -56,8 +58,8 @@ a PR that removes or changes a line of the base's record must be marked
 breaking, a `!` before the colon of its title (`feat!: ...`) or a
 `BREAKING CHANGE:` footer (a major after 1.0). A deprecation adds a
 `deprecated` or `*-support` line and changes none, so it reads as the minor
-it is. Until the v1.0.0 freeze the check is report-only (a warning); the
-freeze PR makes it strict.
+it is. Until the v1.0.0 freeze the check was report-only (a warning); the
+freeze made it strict and a required check.
 
 ## C++ standard
 
@@ -111,9 +113,10 @@ written for.
 
 - Before 1.0 it moved with each breaking change (1: the seed helper; 2: the
   primitives and the glue).
-- At v1.0.0 it is frozen at the value of the API the release ships, set by
-  the freeze PR (below) together with the test in
-  `test/swarm-core-test-suite.cc` that asserts it.
+- v1.0.0 froze it at **2**, the value of the API every release from v0.2.0
+  to v0.4.0 shipped (each additive), so no consumer's check moved; the test in
+  `test/swarm-core-test-suite.cc` asserts it. <!-- TODO(freeze): the
+  maintainer confirms 2 (rather than 1, the major) -->
 - After 1.0 it changes only in a major release, by one per major. Minor and
   patch releases never change it: an additive feature is detected by the
   release a consumer pins, not by this constant.
@@ -170,9 +173,24 @@ computers, is **v2.0.0** (epic #82; swarm-routing/.github#253). Its parts
 link signals as one port with fallbacks) are breaking by design and are not
 part of 1.0: in 1.x, `NodeAddress` and the ports keep the form v1.0.0 ships.
 
+## Deprecated at the freeze
+
+Pieces with fewer than two protocol users when v1.0.0 shipped (golden rule
+11, maintainer decision 2026-11-15; [adopters.md](adopters.md)) are
+deprecated in the last 0.x minor and removed no earlier than 2.0.0:
+
+<!-- TODO(freeze, two-users decision on #3, #4, swarm-routing/AntHocNet#1019):
+- `FuzzyMetric` and its parameters (`core/swarm-fuzzy-metric.h`, #3): no user;
+  AntHocNet has no fuzzy metric to port. Recommended: deprecate.
+- `IslLinkMonitor` and `SwarmRoutingBase`'s `IslHelloSuppression` (#4): no
+  user; AntHocNet's inline ISL code is its origin and could adopt it in S10,
+  which gives one user. Recommended: deprecate, unless the maintainer records
+  an exception for the satellite regime.
+-->
+
 ## Before 1.0 (0.x)
 
-Until v1.0.0, any minor release may break the API (SemVer's 0.x rule;
+Until v1.0.0, any minor release could break the API (SemVer's 0.x rule;
 [SECURITY.md](../SECURITY.md)). The protection is golden rule 12 alone: a
 breaking change lands with the downstream fixes or an issue in each
 consumer, and `kSwarmCoreApiVersion` moves with it.
@@ -181,9 +199,11 @@ consumer, and `kSwarmCoreApiVersion` moves with it.
 
 The freeze is done in the release, on the maintainer's word, not before:
 
-1. A freeze PR, merged right before the bump, sets `kSwarmCoreApiVersion`
-   to the frozen value and updates its test, and sets
-   `major_version_zero = false` in `.cz.toml`.
+1. The freeze PR, merged right before the bump, freezes `kSwarmCoreApiVersion`
+   (at 2) and its test, sets `major_version_zero = false` in `.cz.toml`, makes
+   the `api-surface` check strict and proposes it as a required check
+   (`.github/org-sync.toml` `[settings]`, applied by swarm-routing/.github's
+   `repo-settings` in mode `apply`).
 2. `release.yml` is dispatched with `mode: bump` and `increment: MAJOR`
    (swarm-routing/.github#211), which opens the `chore(release): bump
    version 0.x.y to 1.0.0` PR; merging it releases.
