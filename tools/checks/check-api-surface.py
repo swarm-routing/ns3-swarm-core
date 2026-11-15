@@ -172,6 +172,20 @@ def top_level_namespaces(cmd: list[str], cwd: Path, wanted: set[str]):
 # --- rendering ------------------------------------------------------------------
 
 
+def written(node: dict, src: bytes) -> str:
+    """An initialiser or default argument as written in the header, whitespace
+    collapsed: `numeric_limits<uint16_t>::max()` and `<uint32_t>` stay
+    distinct, and nothing of the standard library's internals leaks in. Falls
+    back to rendering the AST where the text cannot be cut out (a macro)."""
+    r = node.get("range", {})
+    b, e = r.get("begin", {}), r.get("end", {})
+    if src and "offset" in b and "offset" in e and "tokLen" in e:
+        start, end = b["offset"], e["offset"] + e["tokLen"]
+        if 0 <= start < end <= len(src):
+            return " ".join(strip_comments(src[start:end].decode(errors="replace")).split())
+    return expr(node)
+
+
 def expr(node: dict) -> str:
     """A compact, deterministic rendering of an initialiser or default argument."""
     kind = node.get("kind", "")
@@ -291,7 +305,7 @@ def function_line(area: str, qname: str, node: dict, access: str, tmpl: str, src
     params = [c for c in node.get("inner", []) if c.get("kind") == "ParmVarDecl"]
     for i, p in enumerate(params):
         if "init" in p and p.get("inner"):
-            defaults.append(f"{i}={expr(p['inner'][0])}")
+            defaults.append(f"{i}={written(p['inner'][0], src)}")
     if defaults:
         sig += " [defaults " + "; ".join(defaults) + "]"
     head = f"{area} {tmpl}function {qname}"
@@ -331,16 +345,37 @@ def walk(
         if kind == "NamespaceDecl":
             if name not in SKIP_NAMESPACES:
                 walk(area, qname, node.get("inner", []), "", out, src)
-        elif kind == "CXXRecordDecl":
+        elif kind in (
+            "CXXRecordDecl",
+            "ClassTemplateSpecializationDecl",
+            "ClassTemplatePartialSpecializationDecl",
+        ):
             if not node.get("completeDefinition") or not name:
                 continue
+            rec_tmpl = tmpl
+            if kind != "CXXRecordDecl":
+                # An explicit (or partial) specialisation, written at namespace
+                # scope; the implicit instantiations nested in the
+                # ClassTemplateDecl never get here. Its arguments are its identity.
+                targs = [
+                    c["type"]["qualType"]
+                    if "type" in c
+                    else str(c["value"])
+                    if "value" in c
+                    else ", ".join(expr(x) for x in c.get("inner", []))
+                    for c in node.get("inner", [])
+                    if c.get("kind") == "TemplateArgument"
+                ]
+                qname += "<" + ", ".join(targs) + ">"
+                params = [c for c in node.get("inner", []) if c.get("kind") in TEMPLATE_PARAMS]
+                rec_tmpl = template_prefix(params) if params else "template<> "
             tag = node.get("tagUsed", "class")
             bases = [
                 f"{b.get('access', 'public')} {b['type']['qualType']}"
                 for b in node.get("bases", [])
                 if b.get("access", "public") != "private"
             ]
-            line = f"{area} {tmpl}{tag} {qname}"
+            line = f"{area} {rec_tmpl}{tag} {qname}"
             if shown:
                 line += f" ({shown})"
             if bases:
@@ -369,7 +404,7 @@ def walk(
             line += f" ({shown})" if shown else ""
             line += f": {node['type']['qualType']}"
             if node.get("inner") and node.get("hasInClassInitializer"):
-                line += " = " + expr(node["inner"][0])
+                line += " = " + written(node["inner"][0], src)
             out.add(line)
         elif kind == "VarDecl":
             flags = [shown] if shown else []
@@ -381,7 +416,7 @@ def walk(
             line += f" ({' '.join(flags)})" if flags else ""
             line += f": {node['type']['qualType']}"
             if "init" in node and node.get("inner"):
-                line += " = " + expr(node["inner"][0])
+                line += " = " + written(node["inner"][0], src)
             out.add(line)
         elif kind == "EnumDecl":
             scoped = node.get("scopedEnumTag", "")
@@ -402,7 +437,11 @@ def walk(
             line = f"{area} {tmpl}alias {qname}"
             line += f" ({shown})" if shown else ""
             out.add(line + f" = {node['type']['qualType']}")
-        # using-declarations, friends, static_asserts: not names a consumer calls
+        elif kind == "UsingDecl":
+            # `using Base::f;` can make a base member public: its removal is a change
+            line = f"{area} using {scope}::{name}"
+            out.add(line + (f" ({shown})" if shown else ""))
+        # friends, static_asserts: not names a consumer calls
 
 
 def source(work: Path, f: str) -> bytes:
@@ -472,20 +511,75 @@ def split_args(text: str) -> list[str]:
 
 
 def strip_comments(text: str) -> str:
-    text = re.sub(r"/\*.*?\*/", " ", text, flags=re.S)
-    return re.sub(r"//[^\n]*", " ", text)
+    """C++ comments replaced by a space; `//` or `/*` inside a string or
+    character literal (a URL in a help string) is kept."""
+    out, i, n = [], 0, len(text)
+    while i < n:
+        c = text[i]
+        if c in "\"'":
+            j = i + 1
+            while j < n and text[j] != c:
+                j += 2 if text[j] == "\\" else 1
+            out.append(text[i : j + 1])
+            i = j + 1
+        elif text.startswith("//", i):
+            j = text.find("\n", i)
+            out.append(" ")
+            i = n if j < 0 else j
+        elif text.startswith("/*", i):
+            j = text.find("*/", i + 2)
+            out.append(" ")
+            i = n if j < 0 else j + 2
+        else:
+            out.append(c)
+            i += 1
+    return "".join(out)
+
+
+WORD = re.compile(r"\w+")
+
+
+def skip_space(text: str, i: int) -> int:
+    while i < len(text) and text[i].isspace():
+        i += 1
+    return i
+
+
+def matching(text: str, i: int, opening: str, closing: str) -> int:
+    """The index of the bracket closing the one at I."""
+    depth = 0
+    for j in range(i, len(text)):
+        if text[j] == opening:
+            depth += 1
+        elif text[j] == closing:
+            depth -= 1
+            if depth == 0:
+                return j
+    raise SurfaceError(f"unbalanced {opening}{closing} at offset {i}")
 
 
 def chain_calls(text: str, start: int) -> list[tuple[str, str, str]]:
     """The `.Name<targs>(args)` calls chained from START up to the closing `;`."""
     calls = []
-    call = re.compile(r"\s*\.\s*(\w+)\s*(<[^()]*?>)?\s*\(")
     i = start
     while True:
-        m = call.match(text, i)
+        # `.Name`, optional `<targs>` (bracket-matched), then `(`; scanned by hand,
+        # not by one regex, so a long chain costs linear time.
+        i = skip_space(text, i)
+        if i >= len(text) or text[i] != ".":
+            break
+        m = WORD.match(text, skip_space(text, i + 1))
         if not m:
             break
-        depth, j = 1, m.end()
+        name, i = m.group(0), skip_space(text, m.end())
+        targs = ""
+        if i < len(text) and text[i] == "<":
+            close = matching(text, i, "<", ">")
+            targs, i = text[i + 1 : close], skip_space(text, close + 1)
+        if i >= len(text) or text[i] != "(":
+            break
+        depth, j = 1, i + 1
+        open_at = j
         while depth and j < len(text):
             if text[j] == '"':
                 j += 1
@@ -496,8 +590,7 @@ def chain_calls(text: str, start: int) -> list[tuple[str, str, str]]:
             elif text[j] == ")":
                 depth -= 1
             j += 1
-        targs = " ".join((m.group(2) or "")[1:-1].split())
-        calls.append((m.group(1), targs, text[m.end() : j - 1]))
+        calls.append((name, " ".join(targs.split()), text[open_at : j - 1]))
         i = j
     return calls
 
@@ -546,12 +639,17 @@ def typeid_surface(repo: Path) -> set[str]:
 # --- the record and the check ---------------------------------------------------
 
 
+IMAGE = re.compile(r"^[a-z0-9][a-z0-9._/:@-]*$")
+
+
 def ns3_include_from_image(image: str, work: Path) -> Path:
     """Copy an ns3-dev image's ns-3 headers to WORK and point its stubs there.
 
     ns-3's build/include/ns3/*.h are one-line stubs that include the header in
     /opt/ns-3/src by its absolute path; they are rewritten to the copy."""
-    dest = work / "ns3tree"
+    if not IMAGE.match(image):
+        raise SurfaceError(f"not an image reference: {image!r}")
+    dest = (work / "ns3tree").resolve()
     dest.mkdir()
     find = 'cd / && find opt/ns-3/src opt/ns-3/contrib opt/ns-3/build/include -name "*.h" 2>/dev/null | tar cf - -T -'
     docker = subprocess.Popen(
@@ -562,6 +660,8 @@ def ns3_include_from_image(image: str, work: Path) -> Path:
         raise SurfaceError(f"could not copy the ns-3 headers out of {image}")
     include = dest / "opt" / "ns-3" / "build" / "include"
     for stub in (include / "ns3").glob("*.h"):
+        if stub.is_symlink() or not stub.resolve().is_relative_to(dest):
+            continue  # only the copied stubs themselves are rewritten
         text = stub.read_text()
         if '"/opt/ns-3/' in text:
             stub.write_text(text.replace('"/opt/ns-3/', f'"{dest}/opt/ns-3/'))
@@ -697,6 +797,10 @@ class Table {
     void secret();
 };
 template <typename T, int N = 2> struct Ring { T v[N]; };
+template <> struct Ring<bool, 1> { bool only; };
+inline constexpr unsigned long kMax = static_cast<unsigned long>(sizeof(short)) /* bytes */ << 8;
+struct Base { protected: void run(); };
+struct Derived : Base { public: using Base::run; };
 template <typename T> T twice(T x) { return x + x; }
 int free_fn(int a, int b = kWireVersion);
 [[deprecated("use free_fn")]] int old_fn();
@@ -735,6 +839,8 @@ TypeId Monitor::GetTypeId() {
         .SetGroupName("SwarmCore")
         .AddConstructor<Monitor>()
         // a comment, ignored
+        .AddAttribute("Url", "see https://example.org/x // not a comment", BooleanValue(true),
+                      MakeBooleanAccessor(&Monitor::m_b), MakeBooleanChecker())
         .AddAttribute("Alpha", "help, with a comma (and parens)",
                       DoubleValue(0.5), MakeDoubleAccessor(&Monitor::m_x),
                       MakeDoubleChecker<double>(0, 1))
@@ -811,6 +917,14 @@ def self_test() -> int:
             "trace ns3::Monitor::Old callback=ns3::Monitor::ChangeCallback",
             "trace-support ns3::Monitor::Old TypeId::SupportLevel::DEPRECATED",
             "core function swarm::core::old_fn: int ()",
+            "core template<> struct swarm::core::Ring<bool, 1>",
+            "core field swarm::core::Ring<bool, 1>::only (public): bool",
+            "core var swarm::core::kMax (constexpr): const unsigned long = static_cast<unsigned long>(sizeof(short)) << 8",
+            "core struct swarm::core::Base",
+            "core function swarm::core::Base::run protected: void ()",
+            "core struct swarm::core::Derived : public Base",
+            "core using swarm::core::Derived::Base::run (public)",
+            "attribute ns3::Monitor::Url initial=BooleanValue(true) checker=MakeBooleanChecker()",
             "core deprecated swarm::core::old_fn",
         }
         missing, extra = expect - got, got - expect
