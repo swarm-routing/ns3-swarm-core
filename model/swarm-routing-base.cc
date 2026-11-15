@@ -100,6 +100,14 @@ TypeId SwarmRoutingBase::GetTypeId() {
                           TimeValue(MilliSeconds(500)),
                           MakeTimeAccessor(&SwarmRoutingBase::m_purgeInterval),
                           MakeTimeChecker(MilliSeconds(1)))
+            .AddAttribute("PeriodicPurge",
+                          "true (default): drop the expired held packets every "
+                          "PurgeInterval. false: never on a timer; the queue still drops an "
+                          "expired packet whenever it is used (Enqueue, Requeue, Release, "
+                          "Purge), as AntHocNet's own pending queue did (#166).",
+                          BooleanValue(true),
+                          MakeBooleanAccessor(&SwarmRoutingBase::m_periodicPurge),
+                          MakeBooleanChecker())
             .AddAttribute("IslHelloSuppression",
                           "Learn the neighbour of every point-to-point interface the node's "
                           "IslLinkMonitor calls authoritative from link state: beacons "
@@ -160,7 +168,9 @@ int64_t SwarmRoutingBase::AssignStreams(int64_t stream) {
 void SwarmRoutingBase::DoInitialize() {
     m_portsStale = true;
     m_purgeTimer.SetFunction(&SwarmRoutingBase::PurgeTick, this);
-    m_purgeTimer.Schedule(m_purgeInterval);
+    if (m_periodicPurge) {
+        m_purgeTimer.Schedule(m_purgeInterval);
+    }
     if (Ptr<Node> node = NodeOf()) {
         if (Ptr<WifiLinkMonitor> wifi = node->GetObject<WifiLinkMonitor>()) {
             wifi->TraceConnectWithoutContext("TxFailure",
@@ -631,7 +641,9 @@ void SwarmRoutingBase::Start() {
         m_purgeTimer.Cancel();
     }
     m_purgeTimer.SetFunction(&SwarmRoutingBase::PurgeTick, this);
-    m_purgeTimer.Schedule(m_purgeInterval);
+    if (m_periodicPurge) {
+        m_purgeTimer.Schedule(m_purgeInterval);
+    }
     DoNodeStart();
     if (m_islHelloSuppression) {
         AnnounceLinkStatePeers();  // no hello will teach the protocol these (#4)
@@ -727,6 +739,19 @@ void SwarmRoutingBase::BroadcastControl(Ptr<Packet> p) {
     for (const auto& kv : m_sockets) {
         kv.socket->SendTo(p->Copy(), 0, InetSocketAddress(kv.iface.GetBroadcast(), ControlPort()));
     }
+}
+
+bool SwarmRoutingBase::BroadcastControlOn(Ptr<Packet> p, uint32_t interface) {
+    if (IsDown()) {
+        return false;
+    }
+    for (const auto& kv : m_sockets) {
+        if (kv.ifIndex == static_cast<int32_t>(interface)) {
+            kv.socket->SendTo(p, 0, InetSocketAddress(kv.iface.GetBroadcast(), ControlPort()));
+            return true;
+        }
+    }
+    return false;
 }
 
 uint32_t SwarmRoutingBase::BroadcastBeacon(Ptr<Packet> p) {
