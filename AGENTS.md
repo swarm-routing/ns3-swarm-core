@@ -77,13 +77,17 @@ examples/           swarm-core-seed: the determinism gate's program (seeded draw
 tools/checks/       check-core-consumer.sh: core/ in another CMake project gets the library alone (no test target, no ctest
                     entry, no -Werror of ours), installs as the package find_package finds (its version rule
                     included), and its dist.sh tarball builds by URL + URL_HASH; run by the `core` check;
-                    check-cxx-standard.py: core/'s C++ standard against an ns-3 tree's minimum (#141) — MIT OR GPL-2.0-only
+                    check-cxx-standard.py: core/'s C++ standard against an ns-3 tree's minimum (#141);
+                    check-api-surface.py: docs/api-surface.txt, the generated record of the public API, and the guard that
+                    a PR removing or changing an item in it is marked breaking (#83) — MIT OR GPL-2.0-only
 tools/release/      dist.sh: the release asset (swarm-core-<ver>.tar.gz), checked in a clean ns3-dev tree; `make dist` — MIT OR GPL-2.0-only
 .cz.toml, VERSION   Commitizen config and the version it bumps; releases run through release.yml
 .github/workflows/  ci.yml (reusable-ns3-ci: strict warnings, coverage, determinism, format, headers; `cxx-standard`:
                     tools/checks/check-cxx-standard.py, core/'s standard against the image's ns-3 minimum, #141), core.yml (check `core`:
                     core/ alone at C++23, strict warnings, ctest, again under ASan + UBSan, the consumer check; #99), pr-title.yml,
-                    release.yml (the org reusable-release.yml, then the ns3-swarm-core image)
+                    release.yml (the org reusable-release.yml, then the ns3-swarm-core image), api-surface.yml (check
+                    `api-surface`: the API record is current and nothing in it removed without a breaking mark;
+                    report-only until the v1.0.0 freeze, #83)
 ```
 
 ## Build & verify
@@ -147,6 +151,18 @@ follows in a minor release, with an issue in each consumer
 (`python3 -I tools/checks/check-cxx-standard.py --self-test`; in the image:
 `python3 -I tools/checks/check-cxx-standard.py --ns3 /opt/ns-3`).
 Licence headers and the include rule: `python3 -I ../.github/tools/checks/check-headers.py --dual core/ --dual tools/ --core core/ .`.
+
+The public API (`docs/api-policy.md` "What the API is") is recorded in
+`docs/api-surface.txt`, generated from the headers and the `TypeId`
+registrations; a PR that adds to the API commits the regenerated file, and
+one that removes or changes a line must be a breaking change (`!` in its
+title or a `BREAKING CHANGE:` footer). The `api-surface` workflow checks both,
+report-only until the v1.0.0 freeze (#83). Needs `clang++-18` and docker:
+
+```bash
+make api-surface   # = python3 -I tools/checks/check-api-surface.py generate --ns3-image $(NS3_IMAGE)
+python3 -I tools/checks/check-api-surface.py --self-test
+```
 
 Releases (epic #6; `swarm-routing/.github` CONTRIBUTING "Cutting a release"):
 dispatch `release.yml` with `dry-run`, then `bump`; merging the bot's
