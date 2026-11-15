@@ -36,6 +36,12 @@ Update this table in the PR that changes a piece's users.
 
 ## Pieces without two users
 
+Counting rule: a protocol counts as a user when its `core/` or `ns3/` uses
+the piece. The test and benchmark tools are the exception: the testbench and
+`SwarmLifecycleHelper` exist for tests and benchmarks, so their users are
+counted from those (four protocols each, the rows above), and they are not
+below two.
+
 `FuzzyMetric` and `IslLinkMonitor` have no protocol user yet; `EnergyMetric`,
 `EnergyMetricHook` and `VisitedPath` have one until AntHocNet's port
 adopts them. Before v1.0.0, swarm-routing/AntHocNet#1019 checks whether
