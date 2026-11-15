@@ -9,7 +9,7 @@
 [![Conventional Commits](https://img.shields.io/badge/Conventional%20Commits-1.0.0-yellow)](https://www.conventionalcommits.org)
 [![Colony Arena: ns3-swarm-core](https://img.shields.io/badge/Colony%20Arena-project%20page-orange)](https://swarm-routing.github.io/projects/ns3-swarm-core/)
 [![OpenSSF Scorecard](https://api.securityscorecards.dev/projects/github.com/swarm-routing/ns3-swarm-core/badge)](https://scorecard.dev/viewer/?uri=github.com/swarm-routing/ns3-swarm-core)
-[![C++20](https://img.shields.io/badge/C%2B%2B-20-blue?logo=cplusplus)](AGENTS.md)
+[![C++23](https://img.shields.io/badge/C%2B%2B-23-blue?logo=cplusplus)](AGENTS.md)
 [![Runs on ns-3](https://img.shields.io/badge/runs%20on-ns--3-informational)](https://www.nsnam.org)
 [![Built on: ns3-dev](https://img.shields.io/badge/built%20on-ns3--dev%20image-blue?logo=docker)](https://github.com/orgs/swarm-routing/packages/container/package/ns3-dev)
 [![Quality Gate Status](https://sonarcloud.io/api/project_badges/measure?project=swarm-routing_ns3-swarm-core&metric=alert_status)](https://sonarcloud.io/summary/new_code?id=swarm-routing_ns3-swarm-core)
@@ -21,7 +21,7 @@
 <!-- org-sync:end badges -->
 
 The shared ns-3 contrib module `swarm-core` that every swarm-routing protocol
-links against: simulator-agnostic C++20 primitives (visited path, little-endian
+links against: simulator-agnostic C++23 primitives (visited path, little-endian
 wire helpers, pheromone table, route decision, link-state and link-metric
 seams) and ns-3 cross-layer glue. **Status:** primitives in `core/`
 (namespace `swarm::core`, `MIT OR GPL-2.0-only`, buildable and testable without
@@ -42,7 +42,12 @@ the rules and how to build and verify; the release plan is [docs/roadmap.md](doc
 
 ## Use core/ from another CMake project
 
-`core/` needs no ns-3: a C++20 compiler and CMake 3.20. Added by another
+`core/` needs no ns-3: a C++23 compiler and CMake 3.20. C++23 is the standard of the ns-3 release swarm-core supports
+(ns-3's `CMAKE_CXX_STANDARD_MINIMUM`, C++23 from ns-3.46): `core/` follows it,
+and `swarm::core` carries it as a compile feature, so your targets that link
+it compile at C++23 or later. When ns-3 raises its minimum, swarm-core follows
+in a minor release, announced in an issue in each consumer
+([docs/api-policy.md](docs/api-policy.md#c-standard)). Added by another
 project, its `CMakeLists.txt` defines the static library `swarm_core` (alias
 `swarm::core`) and nothing else: no test target, no entry in your `ctest`, and
 its strict warnings stay on its own sources, never as errors. Pin a commit:

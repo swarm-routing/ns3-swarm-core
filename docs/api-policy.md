@@ -37,6 +37,27 @@ release unchanged, with deprecation warnings not treated as errors
 (ABI) compatibility is not promised; every consumer compiles swarm-core from
 source.
 
+## C++ standard
+
+`core/` targets the C++ standard of the ns-3 release swarm-core supports:
+ns-3's own `CMAKE_CXX_STANDARD_MINIMUM` (in its
+`build-support/macros-and-definitions.cmake`; C++17 for ns-3.40, C++20 for
+3.41–3.45, C++23 from 3.46), so **C++23 today** (maintainer decision
+2026-11-14, #141). `core/CMakeLists.txt` sets `CMAKE_CXX_STANDARD 23` and gives
+`swarm_core` the compile feature `cxx_std_23`, so every target that links
+`swarm::core`, as a subproject, the installed package or the release tarball,
+compiles at C++23 or later. A consumer needs a compiler for that standard.
+The ns-3 module compiles the same sources at the standard of the ns-3 tree it
+is built in, the same one.
+
+When ns-3 raises its minimum, swarm-core follows in a **minor** release: the
+standard is not part of the source API above (no name or signature changes),
+but a consumer may need a newer compiler, so the PR opens an issue in each
+consumer listed above before it merges and the release notes say so. The
+`cxx-standard` job of `ci.yml` (`tools/checks/check-cxx-standard.py`) fails
+when `core/` is below the minimum of the `ns3-dev` image CI builds in, so the
+move is never missed.
+
 ## Versions
 
 Releases follow [SemVer](https://semver.org), read against the API above:

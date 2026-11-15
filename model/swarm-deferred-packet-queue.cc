@@ -6,6 +6,7 @@
 // (GPL-2.0-only); see swarm-deferred-packet-queue.h.
 #include "swarm-deferred-packet-queue.h"
 
+#include "ns3/boolean.h"
 #include "ns3/log.h"
 #include "ns3/simulator.h"
 #include "ns3/socket.h"
@@ -35,6 +36,13 @@ TypeId DeferredPacketQueue::GetTypeId() {
                           "before it is dropped. 30 s, ns-3 AODV's default.",
                           TimeValue(Seconds(30)), MakeTimeAccessor(&DeferredPacketQueue::m_maxAge),
                           MakeTimeChecker(Seconds(0)))
+            .AddAttribute("RearmOnEnqueue",
+                          "false (default): MaxAge counts from a packet's first enqueue. "
+                          "true: MaxAge is re-armed at each Enqueue and Requeue "
+                          "(AntHocNet's QueueTimeout, #126). Either way a hold-class cap "
+                          "bounds the wait from the first enqueue.",
+                          BooleanValue(false), MakeBooleanAccessor(&DeferredPacketQueue::m_rearm),
+                          MakeBooleanChecker())
             .AddTraceSource("Drop",
                             "A packet left the queue without being forwarded "
                             "(packet, IP header, reason).",
@@ -44,7 +52,7 @@ TypeId DeferredPacketQueue::GetTypeId() {
 }
 
 DeferredPacketQueue::DeferredPacketQueue()
-    : m_maxPackets(64), m_maxAge(Seconds(30)), m_oldest(Time::Max()) {}
+    : m_maxPackets(64), m_maxAge(Seconds(30)), m_rearm(false), m_oldest(Time::Max()) {}
 
 void DeferredPacketQueue::DoDispose() {
     m_queue.clear();
@@ -52,7 +60,40 @@ void DeferredPacketQueue::DoDispose() {
 }
 
 bool DeferredPacketQueue::Expired(const DeferredPacket& e) const {
-    return Simulator::Now() - e.enqueued >= m_maxAge;
+    const Time now = Simulator::Now();
+    if (now - (m_rearm ? e.latest : e.enqueued) >= m_maxAge) {
+        return true;
+    }
+    const Time cap = m_holdCap[ClassOf(e)];
+    return cap.IsStrictlyPositive() && now - e.enqueued >= cap;
+}
+
+Time DeferredPacketQueue::MinWindow() const {
+    // latest >= enqueued, so no packet expires before min(MaxAge, cap) has
+    // passed since its first enqueue.
+    Time w = m_maxAge;
+    for (const Time& cap : m_holdCap) {
+        if (cap.IsStrictlyPositive() && cap < w) {
+            w = cap;
+        }
+    }
+    return w;
+}
+
+void DeferredPacketQueue::SetHoldClassCap(uint8_t holdClass, Time cap) {
+    m_holdCap[holdClass < kDeferredHoldClasses ? holdClass : 0] = cap;
+}
+
+Time DeferredPacketQueue::GetHoldClassCap(uint8_t holdClass) const {
+    return m_holdCap[holdClass < kDeferredHoldClasses ? holdClass : 0];
+}
+
+void DeferredPacketQueue::NoteForwarded(const DeferredPacket& e) {
+    DeferredClassStats& c = m_stats.byClass[ClassOf(e)];
+    const double held = (Simulator::Now() - e.enqueued).GetSeconds();
+    ++c.forwarded;
+    c.forwardedHoldSumS += held;
+    c.forwardedHoldMaxS = std::max(c.forwardedHoldMaxS, held);
 }
 
 void DeferredPacketQueue::Drop(const DeferredPacket& e, DeferredDropReason reason) {
@@ -69,6 +110,12 @@ void DeferredPacketQueue::Drop(const DeferredPacket& e, DeferredDropReason reaso
     case DeferredDropReason::NodeDown:
         ++m_stats.nodeDown;
         break;
+    }
+    if (reason == DeferredDropReason::Overflow || reason == DeferredDropReason::Expired) {
+        // No route in time: the class's account (#126).
+        DeferredClassStats& c = m_stats.byClass[ClassOf(e)];
+        ++c.dropped;
+        c.droppedHoldSumS += (Simulator::Now() - e.enqueued).GetSeconds();
     }
     m_dropTrace(e.packet, e.header, reason);
     if (!e.ecb.IsNull()) {
@@ -94,6 +141,7 @@ void DeferredPacketQueue::Admit(DeferredPacket entry) {
     if (entry.enqueued.IsZero()) {
         entry.enqueued = Simulator::Now();
     }
+    entry.latest = Simulator::Now();
     ++m_stats.enqueued;
     if (Expired(entry)) {
         Drop(entry, DeferredDropReason::Expired);  // came back after its time ran out
@@ -153,9 +201,10 @@ void DeferredPacketQueue::Discard(Ipv4Address dst) {
 }
 
 void DeferredPacketQueue::Purge() {
-    // m_oldest is a lower bound on every held packet's enqueue time: while
-    // even it is younger than MaxAge, nothing has expired and nothing is read.
-    if (m_queue.empty() || Simulator::Now() - m_oldest < m_maxAge) {
+    // m_oldest is a lower bound on every held packet's first enqueue time:
+    // while even it is younger than MaxAge and every class cap, nothing has
+    // expired and nothing is read.
+    if (m_queue.empty() || Simulator::Now() - m_oldest < MinWindow()) {
         return;
     }
     for (const auto& e : Extract([this](const DeferredPacket& p) { return Expired(p); })) {
