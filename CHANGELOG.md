@@ -1,3 +1,13 @@
+## v0.4.0 (2026-11-15)
+
+### Feat
+
+- **model**: reach a multi-interface peer by its canonical address through a peer map (#145)
+- **model**: one OnTxFailure hook per Wi-Fi retry-limit drop, saying whether the lost frame was data (#144)
+- **core**: core/ targets C++23, the standard of the ns-3 release swarm-core supports (#142)
+- **model**: deferred-queue hold classes with their own cap and statistics, and expiry re-armed on requeue (#143)
+- **core**: per-destination evaporation over chosen entries, and re-timing the last hop of a visited path (#140)
+
 ## v0.3.0 (2026-11-14)
 
 ### Feat
