@@ -451,6 +451,9 @@ private:
     void IslLinkChanged(Ipv4Address peer, bool up);
     /// OnLinkUp for the peer of every interface whose beacons are suppressed.
     void AnnounceLinkStatePeers();
+    /// Connects the node's WifiLinkMonitor (its TxFailure) once, at DoInitialize
+    /// or when it is aggregated later (#166).
+    void ConnectWifiMonitor();
     /// Connects the node's IslLinkMonitor once, at DoInitialize or when it is
     /// aggregated later; with IslHelloSuppression, also its far-end carrier
     /// (PeerLinkChange) and the announcement of its peers.
@@ -515,8 +518,9 @@ private:
     /// IslHelloSuppression (#4), and the time-0 announcement it schedules.
     bool m_islHelloSuppression = false;
     EventId m_announceEvent;
-    bool m_initialized = false;   ///< DoInitialize ran
-    bool m_islConnected = false;  ///< ConnectIslMonitor connected one
+    bool m_initialized = false;    ///< DoInitialize ran
+    bool m_islConnected = false;   ///< ConnectIslMonitor connected one
+    bool m_wifiConnected = false;  ///< ConnectWifiMonitor connected one
     /// The peer map (#127): canonical address -> interface and link address.
     struct PeerRoute {
         uint32_t iface = 0;
