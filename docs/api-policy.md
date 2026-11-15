@@ -65,8 +65,10 @@ freeze PR makes it strict.
 A few pieces ship in the module but are **outside the 1.0 SemVer promise**:
 no protocol uses them yet, so their shape is not proven by two users (golden
 rule 11), and whether a second protocol adopts them is decided in a release
-after 1.0.0 (maintainer decision 2026-11-15, #160). They are not removed, so
-marking them is no breaking change, but from v1.0.0 any minor release may
+after 1.0.0 (maintainer decision 2026-11-15, #160). They were marked before
+v1.0.0, while nothing was frozen yet (0.x), and nothing was removed, so the
+marking broke no consumer; from v1.0.0 on, marking a frozen item experimental
+is a breaking change like any removal (below). From v1.0.0 any minor release may
 change or remove them, with a changelog entry and an issue in each consumer
 that uses one. A consumer that relies on one pins a release.
 
