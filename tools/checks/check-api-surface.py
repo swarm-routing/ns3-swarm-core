@@ -476,16 +476,50 @@ def strip_comments(text: str) -> str:
     return re.sub(r"//[^\n]*", " ", text)
 
 
+WORD = re.compile(r"\w+")
+
+
+def skip_space(text: str, i: int) -> int:
+    while i < len(text) and text[i].isspace():
+        i += 1
+    return i
+
+
+def matching(text: str, i: int, opening: str, closing: str) -> int:
+    """The index of the bracket closing the one at I."""
+    depth = 0
+    for j in range(i, len(text)):
+        if text[j] == opening:
+            depth += 1
+        elif text[j] == closing:
+            depth -= 1
+            if depth == 0:
+                return j
+    raise SurfaceError(f"unbalanced {opening}{closing} at offset {i}")
+
+
 def chain_calls(text: str, start: int) -> list[tuple[str, str, str]]:
     """The `.Name<targs>(args)` calls chained from START up to the closing `;`."""
     calls = []
-    call = re.compile(r"\s*\.\s*(\w+)\s*(<[^()]*?>)?\s*\(")
     i = start
     while True:
-        m = call.match(text, i)
+        # `.Name`, optional `<targs>` (bracket-matched), then `(`; scanned by hand,
+        # not by one regex, so a long chain costs linear time.
+        i = skip_space(text, i)
+        if i >= len(text) or text[i] != ".":
+            break
+        m = WORD.match(text, skip_space(text, i + 1))
         if not m:
             break
-        depth, j = 1, m.end()
+        name, i = m.group(0), skip_space(text, m.end())
+        targs = ""
+        if i < len(text) and text[i] == "<":
+            close = matching(text, i, "<", ">")
+            targs, i = text[i + 1 : close], skip_space(text, close + 1)
+        if i >= len(text) or text[i] != "(":
+            break
+        depth, j = 1, i + 1
+        open_at = j
         while depth and j < len(text):
             if text[j] == '"':
                 j += 1
@@ -496,8 +530,7 @@ def chain_calls(text: str, start: int) -> list[tuple[str, str, str]]:
             elif text[j] == ")":
                 depth -= 1
             j += 1
-        targs = " ".join((m.group(2) or "")[1:-1].split())
-        calls.append((m.group(1), targs, text[m.end() : j - 1]))
+        calls.append((name, " ".join(targs.split()), text[open_at : j - 1]))
         i = j
     return calls
 
@@ -546,12 +579,17 @@ def typeid_surface(repo: Path) -> set[str]:
 # --- the record and the check ---------------------------------------------------
 
 
+IMAGE = re.compile(r"^[a-z0-9][a-z0-9._/:@-]*$")
+
+
 def ns3_include_from_image(image: str, work: Path) -> Path:
     """Copy an ns3-dev image's ns-3 headers to WORK and point its stubs there.
 
     ns-3's build/include/ns3/*.h are one-line stubs that include the header in
     /opt/ns-3/src by its absolute path; they are rewritten to the copy."""
-    dest = work / "ns3tree"
+    if not IMAGE.match(image):
+        raise SurfaceError(f"not an image reference: {image!r}")
+    dest = (work / "ns3tree").resolve()
     dest.mkdir()
     find = 'cd / && find opt/ns-3/src opt/ns-3/contrib opt/ns-3/build/include -name "*.h" 2>/dev/null | tar cf - -T -'
     docker = subprocess.Popen(
@@ -562,6 +600,8 @@ def ns3_include_from_image(image: str, work: Path) -> Path:
         raise SurfaceError(f"could not copy the ns-3 headers out of {image}")
     include = dest / "opt" / "ns-3" / "build" / "include"
     for stub in (include / "ns3").glob("*.h"):
+        if stub.is_symlink() or not stub.resolve().is_relative_to(dest):
+            continue  # only the copied stubs themselves are rewritten
         text = stub.read_text()
         if '"/opt/ns-3/' in text:
             stub.write_text(text.replace('"/opt/ns-3/', f'"{dest}/opt/ns-3/'))
