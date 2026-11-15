@@ -129,6 +129,43 @@ install found by `find_package`, its version rule, and a `dist.sh` tarball by
 URL + `URL_HASH`), and the release's `make dist` check builds the
 `find_package` form against the tarball it ships.
 
+### Through vcpkg
+
+For a project outside the org, the same package comes from the org's vcpkg
+git registry, [swarm-routing/vcpkg-registry](https://github.com/swarm-routing/vcpkg-registry)
+(its port `swarm-core` builds this release asset, checked by its SHA512, and
+is installed on `x64-linux` and `wasm32-emscripten` in its CI;
+swarm-routing/.github#436). Add the registry to your
+`vcpkg-configuration.json`, depend on the port and pin its version (any 0.y
+may break the API, above):
+
+```json
+{
+  "default-registry": {
+    "kind": "git",
+    "repository": "https://github.com/microsoft/vcpkg",
+    "baseline": "<a microsoft/vcpkg commit>"
+  },
+  "registries": [
+    {
+      "kind": "git",
+      "repository": "https://github.com/swarm-routing/vcpkg-registry",
+      "baseline": "<a commit of the registry's main>",
+      "packages": ["swarm-core"]
+    }
+  ]
+}
+```
+
+```json
+{ "dependencies": ["swarm-core"], "overrides": [{ "name": "swarm-core", "version": "0.4.0" }] }
+```
+
+then `find_package(swarm-core CONFIG REQUIRED)` and `swarm::core`, as above,
+with vcpkg's toolchain file. Each release here opens the port's bump PR in
+the registry by itself (`vcpkg-ports: swarm-core` in `release.yml`, #135).
+The org's own protocol repositories keep the release lock.
+
 ## Test a protocol core without a simulator
 
 `core/testbench/swarm-testbench.h` is a discrete-event testbench for a
