@@ -17,6 +17,9 @@ name: Release
 # with the module built in (CONTRIBUTING "Images"). After the publish, the
 # reusable release's `vcpkg` job opens the `swarm-core` port bump PR in
 # swarm-routing/vcpkg-registry (vcpkg-ports, swarm-routing/.github#439).
+# A dry run also builds and tests swarm-core's consumers (the four protocols
+# and AntHocNet, .github/downstream.txt) against the commit, report-only
+# (`downstream-consumers`, swarm-routing/.github#482).
 on:
   workflow_dispatch:
     inputs:
@@ -49,6 +52,9 @@ jobs:
       mode: ${{ inputs.mode }}   # empty on push: release
       increment: ${{ inputs.increment != 'auto' && inputs.increment || '' }}  # '' on push and for auto (swarm-routing/.github#211)
       vcpkg-ports: swarm-core   # after publish, the org bot opens the port bump PR in swarm-routing/vcpkg-registry (#135)
+      # a dry run builds the protocols and AntHocNet against this commit,
+      # report-only (.github/downstream.txt, swarm-routing/.github#482)
+      downstream-consumers: .github/downstream.txt
     secrets:
       BOT_APP_ID: ${{ secrets.BOT_APP_ID }}
       BOT_APP_PRIVATE_KEY: ${{ secrets.BOT_APP_PRIVATE_KEY }}

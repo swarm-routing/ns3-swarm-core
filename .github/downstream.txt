@@ -1,0 +1,21 @@
+# The consumers a release of swarm-core is checked against before it ships
+# (swarm-routing/.github#482): release.yml passes this file as
+# reusable-release.yml's `downstream-consumers`, and a dry run builds and
+# tests each line on ns3-dev latest-debug with this repository's checkout as
+# the `ns3-swarm-core` line (swarm-routing/.github tools/downstream/downstream.sh,
+# whose header documents the columns). Report-only: it says which consumer a
+# release would break, the bump goes on regardless.
+#
+#   name | owner/repo@ref | ns-3 | modules | suites | stage | run
+#
+# swarm-core itself, then each protocol's ns-3 module on it (as
+# ns3-containers' canary builds them; a protocol with no ns3/ yet is skipped).
+ns3-swarm-core | swarm-routing/ns3-swarm-core@main | 3.42+ | swarm-core=ns3-swarm-core | | |
+ARA | swarm-routing/ARA@main | 3.42+ | swarm-core=ns3-swarm-core ara=ARA/ns3 | | |
+BeeAdHoc | swarm-routing/BeeAdHoc@main | 3.42+ | swarm-core=ns3-swarm-core beeadhoc=BeeAdHoc/ns3 | | |
+Termite | swarm-routing/Termite@main | 3.42+ | swarm-core=ns3-swarm-core termite=Termite/ns3 | | |
+HOPNET | swarm-routing/HOPNET@main | 3.42+ | swarm-core=ns3-swarm-core hopnet=HOPNET/ns3 | | |
+# AntHocNet: its install stages this checkout's swarm-core (SWARM_CORE_DIR)
+# in place of the release its swarm-core.lock names, beside its arm modules
+# and the routing-bench release its ns3-tools.lock names.
+AntHocNet | swarm-routing/AntHocNet@main | 3.36+ | swarm-core=AntHocNet/.stage/contrib/swarm-core routing-bench=AntHocNet/.stage/contrib/routing-bench oracle=AntHocNet/.stage/contrib/oracle aomdv=AntHocNet/.stage/contrib/aomdv gpsr=AntHocNet/.stage/contrib/gpsr adaptive=AntHocNet/.stage/contrib/adaptive anthocnet=AntHocNet/.stage/contrib/anthocnet | anthocnet oracle adaptive | mkdir -p .stage/contrib && touch .stage/CMakeLists.txt && SWARM_CORE_DIR=/w/ns3-swarm-core/core make -s install-ns3 NS3DIR="$PWD/.stage" | cd /opt/ns-3 && ./ns3 run --no-build anthocnet-example
