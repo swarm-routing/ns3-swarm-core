@@ -9,7 +9,7 @@ message: "If you use this software, please cite it using the metadata below."
 title: "ns3-swarm-core"
 abstract: >-
   swarm-core, the shared ns-3 contrib module every swarm-routing protocol
-  links against: simulator-agnostic C++20 primitives (visited path,
+  links against: simulator-agnostic C++23 primitives (visited path,
   little-endian wire helpers, pheromone table, route decision, link metrics)
   and the ns-3 glue they need.
 type: software

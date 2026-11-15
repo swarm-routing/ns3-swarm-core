@@ -4,7 +4,7 @@
 # The CMake package swarm-core (#133): find_package(swarm-core CONFIG REQUIRED)
 # gives the imported static library swarm::core, whose include directory holds
 # the core/ headers ("swarm-ports.h", ..., "testbench/swarm-testbench.h") and
-# which carries cxx_std_20 to whatever links it.
+# which carries cxx_std_23 to whatever links it.
 @PACKAGE_INIT@
 
 include("${CMAKE_CURRENT_LIST_DIR}/swarm-coreTargets.cmake")
