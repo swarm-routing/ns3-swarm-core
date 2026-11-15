@@ -9,6 +9,7 @@ attribute ns3::IslLinkMonitor::TrustAfterFailure initial=BooleanValue(false) che
 attribute ns3::SwarmRoutingBase::DeferredQueue initial=PointerValue() checker=MakePointerChecker<DeferredPacketQueue>()
 attribute ns3::SwarmRoutingBase::IslHelloSuppression initial=BooleanValue(false) checker=MakeBooleanChecker()
 attribute ns3::SwarmRoutingBase::MaxPeerRoutes initial=UintegerValue(1024) checker=MakeUintegerChecker<uint32_t>(1)
+attribute ns3::SwarmRoutingBase::PeriodicPurge initial=BooleanValue(true) checker=MakeBooleanChecker()
 attribute ns3::SwarmRoutingBase::PurgeInterval initial=TimeValue(MilliSeconds(500)) checker=MakeTimeChecker(MilliSeconds(1))
 attribute ns3::WifiLinkMonitor::MaxNeighbors initial=UintegerValue(256) checker=MakeUintegerChecker<uint32_t>(1)
 attribute ns3::WifiLinkMonitor::ServiceTimeAlpha initial=DoubleValue(0.9) checker=MakeDoubleChecker<double>(0.0, 1.0)
@@ -420,6 +421,8 @@ ns3 field ns3::DeferredQueueStats::overflow (public): uint64_t = 0
 ns3 field ns3::DeferredQueueStats::released (public): uint64_t = 0
 ns3 field ns3::DeferredQueueStats::releasedHoldMaxS (public): double = 0.0
 ns3 field ns3::DeferredQueueStats::releasedHoldSumS (public): double = 0.0
+ns3 field ns3::SwarmRoutingBase::NextHopRoute::gateway (public): Ipv4Address
+ns3 field ns3::SwarmRoutingBase::NextHopRoute::ifIdx (public): int32_t = -1
 ns3 field ns3::SwarmRoutingStats::aggregate (public): swarm::core::RouterStats
 ns3 field ns3::SwarmRoutingStats::perNode (public): std::vector<std::pair<uint32_t, swarm::core::RouterStats>>
 ns3 function ns3::BufferWireWriter::BufferWireWriter public explicit: void (Buffer::Iterator &)
@@ -539,6 +542,7 @@ ns3 function ns3::SwarmRoutingBase::RecvControl protected virtual: void (Ptr<Pac
 ns3 function ns3::SwarmRoutingBase::ReleaseDeferred protected: void (Ipv4Address)
 ns3 function ns3::SwarmRoutingBase::ResendData protected: bool (Ptr<const Packet>, const Ipv4Header &, Ipv4Address)
 ns3 function ns3::SwarmRoutingBase::ResetRouterStats public: void ()
+ns3 function ns3::SwarmRoutingBase::ResolveNextHop protected: NextHopRoute (Ipv4Address) const
 ns3 function ns3::SwarmRoutingBase::Rng protected: SwarmRng &()
 ns3 function ns3::SwarmRoutingBase::RouteInput public: bool (Ptr<const Packet>, const Ipv4Header &, Ptr<const NetDevice>, const UnicastForwardCallback &, const MulticastForwardCallback &, const LocalDeliverCallback &, const ErrorCallback &)
 ns3 function ns3::SwarmRoutingBase::RouteOutput public: Ptr<Ipv4Route> (Ptr<Packet>, const Ipv4Header &, Ptr<NetDevice>, Socket::SocketErrno &)
@@ -584,6 +588,7 @@ ns3 function ns3::WifiLinkMonitor::sinrDbFrom public: double (swarm::core::NodeA
 ns3 struct ns3::DeferredClassStats
 ns3 struct ns3::DeferredPacket
 ns3 struct ns3::DeferredQueueStats
+ns3 struct ns3::SwarmRoutingBase::NextHopRoute (protected)
 ns3 struct ns3::SwarmRoutingStats
 ns3 template<typename Message, typename Encode> function ns3::SwarmRoutingBase::Execute protected: bool (const swarm::core::RouteDecision<Message> &, Encode)
 ns3 var ns3::SwarmLifecycleHelper::kMaxEntries (public constexpr static): const uint32_t = 100000

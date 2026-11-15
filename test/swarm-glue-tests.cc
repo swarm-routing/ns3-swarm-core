@@ -172,6 +172,8 @@ public:
     using SwarmRoutingBase::LinkQuality;
     using SwarmRoutingBase::LinkState;
     using SwarmRoutingBase::Neighbors;
+    using SwarmRoutingBase::NextHopRoute;
+    using SwarmRoutingBase::ResolveNextHop;
 
 protected:
     void DoInitialize() override {
@@ -2348,6 +2350,17 @@ private:
         std::vector<Ipv4Address> dataAtN1 = Toy(n1)->dataFrom;
         const auto fromN0Data =
             std::count(dataAtN1.begin(), dataAtN1.end(), Ipv4Address("10.1.1.1"));
+        // The resolution every send went through, as an adapter that builds its
+        // own routes reads it: an attached subnet, the peer map, or the first
+        // interface.
+        const ToyProtocol::NextHopRoute onLink = Toy(n0)->ResolveNextHop(Ipv4Address("10.1.2.2"));
+        NS_TEST_EXPECT_MSG_EQ(onLink.ifIdx, 1, "n2 is on n0's interface 1");
+        NS_TEST_EXPECT_MSG_EQ(onLink.gateway, Ipv4Address("10.1.2.2"), "itself the gateway");
+        const ToyProtocol::NextHopRoute toN1 = Toy(n0)->ResolveNextHop(n1canon);
+        NS_TEST_EXPECT_MSG_EQ(toN1.ifIdx, m_withMap ? 2 : 1,
+                              "n1 through its peer link, else the first");
+        NS_TEST_EXPECT_MSG_EQ(toN1.gateway, m_withMap ? n1link : n1canon,
+                              "at its link address, else its own");
         if (m_withMap) {
             NS_TEST_EXPECT_MSG_EQ(rx.size(), 1u, "the data packet reached n3 through n1");
             NS_TEST_EXPECT_MSG_EQ(fromN0.size(), 1u,
@@ -2364,6 +2377,51 @@ private:
             NS_TEST_EXPECT_MSG_EQ(fromN0Data, 0, "nor any data");
             NS_TEST_EXPECT_MSG_EQ(txOnDevice[2], 0u, "nothing left on the n0 - n1 device");
         }
+        Simulator::Destroy();
+    }
+};
+
+/// PeriodicPurge false (#166; AntHocNet's pending queue, S10 of
+/// swarm-routing/AntHocNet#1019): no purge on a timer, an expired packet stays
+/// until the queue is next used, which drops it; at the default 500 ms the
+/// timer drops it first.
+class PurgeOnUseTestCase : public TestCase {
+public:
+    explicit PurgeOnUseTestCase(bool onUse)
+        : TestCase(
+              std::string("glue: deferred packets expire ") +
+              (onUse ? "when the queue is next used (PeriodicPurge false)" : "on the purge timer")),
+          m_onUse(onUse) {}
+
+private:
+    bool m_onUse;
+
+    void DoRun() override {
+        SwarmCoreSeed(1);
+        Line line("10Mbps");
+        Ptr<Node> n0 = line.nodes.Get(0);
+        if (m_onUse) {
+            Toy(n0)->SetAttribute("PeriodicPurge", BooleanValue(false));
+        }
+        Ptr<DeferredPacketQueue> q = Toy(n0)->GetDeferredQueue();
+        q->SetAttribute("MaxAge", TimeValue(Seconds(1)));
+        const Ipv4Address nowhere("10.9.9.9");  // no route is ever learned
+        Ptr<Socket> src = Source(n0);
+        uint64_t expiredAt3 = 0;
+        uint32_t heldAt3 = 0;
+        Simulator::Schedule(Seconds(1.0), [&]() { SendUdp(src, nowhere, 100); });
+        Simulator::Schedule(Seconds(3.0), [&]() {
+            expiredAt3 = q->Stats().expired;
+            heldAt3 = q->Size();
+        });
+        Simulator::Schedule(Seconds(3.5), [&]() { SendUdp(src, nowhere, 100); });
+        Simulator::Stop(Seconds(4));
+        Simulator::Run();
+
+        NS_TEST_EXPECT_MSG_EQ(expiredAt3, m_onUse ? 0u : 1u, "expired by 3 s only with a timer");
+        NS_TEST_EXPECT_MSG_EQ(heldAt3, m_onUse ? 1u : 0u, "still held only without a timer");
+        NS_TEST_EXPECT_MSG_EQ(q->Stats().expired, 1u, "the next enqueue drops it in both");
+        NS_TEST_EXPECT_MSG_EQ(q->Size(), 1u, "the second packet is held");
         Simulator::Destroy();
     }
 };
@@ -2618,6 +2676,8 @@ std::vector<TestCase*> MakeGlueTestCases() {
             new PeerMapTestCase(true),
             new PeerMapTestCase(false),
             new PeerMapBoundsTestCase,
+            new PurgeOnUseTestCase(true),
+            new PurgeOnUseTestCase(false),
             new EnergyHookTestCase,
             new ObserverTestCase,
             new LifecycleTestCase,

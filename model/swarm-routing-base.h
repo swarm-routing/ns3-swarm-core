@@ -414,20 +414,25 @@ protected:
     /// The node's EnergyMetricHook, else a null port.
     const swarm::core::IEnergy& Energy() const;
 
-private:
-    Ptr<Node> NodeOf() const;
-    /// Where a packet to next hop `next` leaves: the interface (-1 when the
-    /// node has none up) and the gateway (#127, SetPeerRoute).
+    /// Where a packet to next hop `next` leaves: the IPv4 interface (-1 when
+    /// the node has none up) and the gateway, by the three rules SetPeerRoute
+    /// describes (#127). Every send of the base resolves through it; an
+    /// adapter that builds its own routes (one overriding RouteOutput or
+    /// RouteInput, as AntHocNet's does) resolves its next hops alike, so its
+    /// data and its control leave through the same interface.
     struct NextHopRoute {
         int32_t ifIdx = -1;
         Ipv4Address gateway;
     };
+    NextHopRoute ResolveNextHop(Ipv4Address next) const;
+
+private:
+    Ptr<Node> NodeOf() const;
     Ptr<Ipv4Route> LoopbackRoute(const Ipv4Header& header, Ptr<NetDevice> oif) const;
     Ptr<Ipv4Route> DirectRoute(Ipv4Address dst, Ipv4Address next, Ipv4Address src) const;
     /// The same, through a resolved next hop (ResolveNextHop).
     Ptr<Ipv4Route> DirectRoute(Ipv4Address dst, Ipv4Address src, const NextHopRoute& hop) const;
     void RefreshPorts() const;
-    NextHopRoute ResolveNextHop(Ipv4Address next) const;
     int32_t InterfaceTowards(Ipv4Address next) const;
     void PurgeTick();
     void RecvSocket(Ptr<Socket> socket);
@@ -477,6 +482,7 @@ private:
     SocketList m_bcastSockets;
     Ptr<DeferredPacketQueue> m_queue;
     Time m_purgeInterval;
+    bool m_periodicPurge = true;  ///< PeriodicPurge (#166)
     Timer m_purgeTimer;
     SwarmClock m_clock;
     SwarmRng m_rng;
