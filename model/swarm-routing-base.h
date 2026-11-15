@@ -469,6 +469,7 @@ private:
     /// Set across a control SendTo, so RouteOutput answers with a one-hop
     /// route to the neighbour instead of asking the protocol.
     Ipv4Address m_directTo;
+    NextHopRoute m_directHop;  ///< the interface and gateway UnicastControl resolved (#127)
     /// Ipv4L3Protocol's forwarding callback, the same for every packet: kept
     /// from RouteInput so ResendData can send outside it.
     UnicastForwardCallback m_ucb;

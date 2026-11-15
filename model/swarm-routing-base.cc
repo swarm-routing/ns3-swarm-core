@@ -462,7 +462,7 @@ Ptr<Ipv4Route> SwarmRoutingBase::RouteOutput(Ptr<Packet> p, const Ipv4Header& he
     }
     const Ipv4Address dst = header.GetDestination();
     if (m_directTo != Ipv4Address() && dst == m_directTo) {
-        return DirectRoute(dst, dst, header.GetSource());  // a UnicastControl
+        return DirectRoute(dst, header.GetSource(), m_directHop);  // a UnicastControl
     }
     const Ipv4Address next = SelectNextHop(dst, MainAddress(), Ipv4Address(), p);
     if (next != Ipv4Address()) {
@@ -820,6 +820,7 @@ void SwarmRoutingBase::UnicastControl(Ptr<Packet> p, Ipv4Address neighbor) {
     for (const auto& kv : m_sockets) {
         if (kv.ifIndex == hop.ifIdx) {
             m_directTo = hop.gateway;
+            m_directHop = hop;  // the route resolved here, not resolved again
             kv.socket->SendTo(p, 0, InetSocketAddress(hop.gateway, ControlPort()));
             m_directTo = Ipv4Address();
             return;
