@@ -77,6 +77,12 @@ public:
     /// neighbour it was for (0.0.0.0 if ARP does not know it). A-MSDUs, MAC
     /// fragments and frames that carry no IPv4 are not reported (#40).
     typedef void (*UndeliveredCallback)(Ptr<const Packet> datagram, Ipv4Address neighbor);
+    /// TxFailure: the same retry-limit drop as one event, fired once after
+    /// LinkFailure and Undelivered: the neighbour's IP (Ipv4Address() when
+    /// not known), its MAC, and the datagram Undelivered carried, or null
+    /// when it fired none (a frame of no whole IPv4 datagram) (#128).
+    typedef void (*TxFailureCallback)(Ipv4Address neighbor, Mac48Address mac,
+                                      Ptr<const Packet> datagram);
 
 protected:
     void DoDispose() override;
@@ -108,6 +114,7 @@ private:
     std::map<Mac48Address, Neighbor> m_neighbors;  ///< bounded by MaxNeighbors
     TracedCallback<Ipv4Address, Mac48Address> m_linkFailureTrace;
     TracedCallback<Ptr<const Packet>, Ipv4Address> m_undeliveredTrace;
+    TracedCallback<Ipv4Address, Mac48Address, Ptr<const Packet>> m_txFailureTrace;
 };
 
 }  // namespace ns3
