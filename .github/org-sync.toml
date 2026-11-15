@@ -1,5 +1,7 @@
 # org-sync configuration (swarm-routing/.github tools/org-sync).
 kind = "protocol"
+# its port in swarm-routing/vcpkg-registry: the README's vcpkg badge (swarm-routing/.github#436)
+vcpkg_ports = ["swarm-core"]
 # CITATION.cff seed and cite badge. Once Zenodo archives a release: set zenodo_concept = "<record id>"
 # (read from Zenodo), then `org_sync.py reseed CITATION.cff` so CITATION.cff names the DOI.
 citation = true

@@ -1,8 +1,10 @@
 // Copyright (c) 2026 Daniel Joppi (https://github.com/swarm-routing)
 // SPDX-License-Identifier: GPL-2.0-only
 //
-// IslLinkMonitor: the point-to-point links (inter-satellite links, ISLs) of one
-// node, as the core's INeighborProvider and ILinkState ports and a link up/down
+// IslLinkMonitor: experimental, outside the 1.0 SemVer promise until a protocol
+// adopts it (docs/api-policy.md "Experimental", #160), with SwarmRoutingBase's
+// IslHelloSuppression, OnLinkUp, BeaconSuppressed and IsLinkStateNeighbor.
+// The point-to-point links (inter-satellite links, ISLs) of one node, as the core's INeighborProvider and ILinkState ports and a link up/down
 // signal. Derived from swarm-routing/AntHocNet
 // ns3/anthocnet/model/anthocnet-routing-protocol.cc @ 3e53f04 (GPL-2.0-only):
 // the per-interface device-queue backlog and inter-dequeue service-time EWMA
