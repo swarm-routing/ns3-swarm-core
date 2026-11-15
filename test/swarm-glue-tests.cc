@@ -2270,6 +2270,54 @@ private:
     }
 };
 
+/// A WifiLinkMonitor aggregated after the node initialized is connected too
+/// (#166), as a late IslLinkMonitor is (#4): its retry-limit drops reach
+/// OnTxFailure.
+class WifiLateMonitorTestCase : public TestCase {
+public:
+    WifiLateMonitorTestCase()
+        : TestCase("glue: a WifiLinkMonitor aggregated after initialisation is connected (#166)") {}
+
+private:
+    void DoRun() override {
+        SwarmCoreSeed(1);
+        NodeContainer nodes;
+        nodes.Create(3);
+        NetDeviceContainer devs = AdhocWifi(nodes, 50.0);
+        SwarmRoutingHelper routing("ns3::swarmtest::ToyProtocol");
+        InternetStackHelper stack;
+        stack.SetRoutingHelper(routing);
+        stack.Install(nodes);  // no monitors
+        Ipv4AddressHelper a;
+        a.SetBase("10.1.1.0", "255.255.255.0");
+        a.Assign(devs);
+        WifiHelper::AssignStreams(devs, 10);
+        Ptr<Node> n0 = nodes.Get(0);
+        Ptr<Node> n1 = nodes.Get(1);
+        Ptr<Node> n2 = nodes.Get(2);
+        const Ipv4Address n1a = Addr(n1, 1);
+        const Ipv4Address n2a = Addr(n2, 1);
+        Toy(n0)->routes[n2a] = n1a;
+        Toy(n1)->routes[n2a] = n2a;
+        Toy(n1)->txOnly = true;
+
+        std::vector<std::string> rx;
+        Ptr<Socket> sink = Sink(n2, &rx);
+        Ptr<Socket> src = Source(n0);
+        Simulator::Schedule(Seconds(0.5), [&]() { SendUdp(src, n2a, 100); });  // ARP warm-up
+        Simulator::Schedule(Seconds(1.0), [&]() { CreateObject<WifiLinkMonitor>()->Install(n1); });
+        Simulator::Schedule(Seconds(2.0), [&]() {
+            n2->GetObject<MobilityModel>()->SetPosition(Vector(5000.0, 0.0, 0.0));
+        });
+        Simulator::Schedule(Seconds(2.1), [&]() { SendUdp(src, n2a, 100); });
+        Simulator::Stop(Seconds(4));
+        Simulator::Run();
+        NS_TEST_EXPECT_MSG_EQ((Toy(n1)->txLog == std::vector<std::string>{"tx data 10.1.1.3"}),
+                              true, "the late monitor's drop reached OnTxFailure");
+        Simulator::Destroy();
+    }
+};
+
 /// The peer map (#127): n0 has two point-to-point links, to n2 first (its
 /// first interface) and to n1; n1 also links to n3, and the protocol names
 /// n1 by its canonical address, n1's address on that n1 - n3 link, a subnet
@@ -2706,6 +2754,7 @@ std::vector<TestCase*> MakeGlueTestCases() {
             new TxFailureTestCase(TxFailureTestCase::Variant::Default),
             new TxFailureTestCase(TxFailureTestCase::Variant::Overridden),
             new TxFailureTestCase(TxFailureTestCase::Variant::CrashInLinkFailure),
+            new WifiLateMonitorTestCase,
             new PeerMapTestCase(true),
             new PeerMapTestCase(false),
             new PeerMapBoundsTestCase,
