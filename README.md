@@ -47,10 +47,14 @@ SHA256 the release's `SHA256SUMS` lists for it, never typed by hand:
 
 ```cmake
 include(FetchContent)
+set(swarm_core_timestamp)   # DOWNLOAD_EXTRACT_TIMESTAMP needs CMake 3.24+
+if(CMAKE_VERSION VERSION_GREATER_EQUAL 3.24)
+  set(swarm_core_timestamp DOWNLOAD_EXTRACT_TIMESTAMP FALSE)
+endif()
 FetchContent_Declare(swarm_core
   URL https://github.com/swarm-routing/ns3-swarm-core/releases/download/v0.3.0/swarm-core-0.3.0.tar.gz
   URL_HASH SHA256=<the asset's line in the release's SHA256SUMS>
-  DOWNLOAD_EXTRACT_TIMESTAMP FALSE   # CMake 3.24+
+  ${swarm_core_timestamp}
   SOURCE_SUBDIR core)
 FetchContent_MakeAvailable(swarm_core)
 target_link_libraries(my_protocol_core PUBLIC swarm::core)   # #include "swarm-ports.h", ...
