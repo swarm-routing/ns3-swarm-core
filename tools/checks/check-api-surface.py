@@ -82,6 +82,24 @@ BREAKING_TITLE = re.compile(r"^[a-z]+(\([^)]*\))?!:")
 BREAKING_FOOTER = re.compile(r"^BREAKING[ -]CHANGE:", re.M)
 
 
+# Experimental: in the record, marked, and outside the 1.0 SemVer promise
+# (docs/api-policy.md "Experimental"; maintainer decision 2026-11-15, #160). A
+# line of an experimental item starts with "experimental ", and the guard never
+# reports its removal or change. Making a frozen item experimental removes its
+# frozen line, so it reads as the breaking change it is.
+EXPERIMENTAL_MARK = "experimental "
+EXPERIMENTAL = re.compile(
+    r"^(swarm::core::(Fuzzy\w*|fuzzyMemberships|kFuzzyTerms)"
+    r"|ns3::IslLinkMonitor"
+    r"|ns3::SwarmRoutingBase::(IslHelloSuppression|BeaconSuppressed|IsLinkStateNeighbor|OnLinkUp))"
+    r"(::|$)"
+)
+
+
+def experimental(qname: str) -> bool:
+    return bool(EXPERIMENTAL.match(qname))
+
+
 class SurfaceError(Exception):
     pass
 
@@ -334,17 +352,24 @@ def walk(
             continue
         if access == "private":
             continue
+        here = area
+        if (
+            node.get("name")
+            and not area.startswith(EXPERIMENTAL_MARK)
+            and experimental(f"{scope}::{node['name']}")
+        ):
+            here = EXPERIMENTAL_MARK + area  # the item and everything inside it
         if any(c.get("kind") == "DeprecatedAttr" for c in node.get("inner", [])) and node.get(
             "name"
         ):
             # its own line: deprecating is a minor change, so the item's line stays as it was
-            out.add(f"{area} deprecated {scope}::{node['name']}")
+            out.add(f"{here} deprecated {scope}::{node['name']}")
         shown = access if default_access else ""
         name = node.get("name", "")
         qname = f"{scope}::{name}" if name else scope
         if kind == "NamespaceDecl":
             if name not in SKIP_NAMESPACES:
-                walk(area, qname, node.get("inner", []), "", out, src)
+                walk(here, qname, node.get("inner", []), "", out, src)
         elif kind in (
             "CXXRecordDecl",
             "ClassTemplateSpecializationDecl",
@@ -375,14 +400,14 @@ def walk(
                 for b in node.get("bases", [])
                 if b.get("access", "public") != "private"
             ]
-            line = f"{area} {rec_tmpl}{tag} {qname}"
+            line = f"{here} {rec_tmpl}{tag} {qname}"
             if shown:
                 line += f" ({shown})"
             if bases:
                 line += " : " + ", ".join(bases)
             out.add(line)
             walk(
-                area,
+                here,
                 qname,
                 node.get("inner", []),
                 "private" if tag == "class" else "public",
@@ -396,11 +421,11 @@ def walk(
             if kind == "FunctionTemplateDecl":
                 rest = rest[:1]  # the pattern; the rest are implicit instantiations
             inner = [{"kind": "AccessSpecDecl", "access": access}] if default_access else []
-            walk(area, scope, inner + rest, default_access, out, src, template_prefix(params))
+            walk(here, scope, inner + rest, default_access, out, src, template_prefix(params))
         elif kind in FUNCTION_KINDS:
-            out.add(function_line(area, qname, node, shown, tmpl, src))
+            out.add(function_line(here, qname, node, shown, tmpl, src))
         elif kind == "FieldDecl":
-            line = f"{area} field {qname}"
+            line = f"{here} field {qname}"
             line += f" ({shown})" if shown else ""
             line += f": {node['type']['qualType']}"
             if node.get("inner") and node.get("hasInClassInitializer"):
@@ -412,7 +437,7 @@ def walk(
                 flags.append("constexpr")
             if node.get("storageClass") == "static":
                 flags.append("static")
-            line = f"{area} {tmpl}var {qname}"
+            line = f"{here} {tmpl}var {qname}"
             line += f" ({' '.join(flags)})" if flags else ""
             line += f": {node['type']['qualType']}"
             if "init" in node and node.get("inner"):
@@ -421,7 +446,7 @@ def walk(
         elif kind == "EnumDecl":
             scoped = node.get("scopedEnumTag", "")
             under = node.get("fixedUnderlyingType", {}).get("qualType", "")
-            line = f"{area} enum{' ' + scoped if scoped else ''} {qname}"
+            line = f"{here} enum{' ' + scoped if scoped else ''} {qname}"
             line += f" ({shown})" if shown else ""
             line += f" : {under}" if under else ""
             out.add(line)
@@ -432,14 +457,14 @@ def walk(
                 consts = [x for x in c.get("inner", []) if x.get("kind") == "ConstantExpr"]
                 value = int(consts[0]["value"]) if consts else value + 1
                 enum_scope = qname if scoped or not name else scope
-                out.add(f"{area} enumerator {enum_scope}::{c['name']} = {value}")
+                out.add(f"{here} enumerator {enum_scope}::{c['name']} = {value}")
         elif kind in ("TypedefDecl", "TypeAliasDecl"):
-            line = f"{area} {tmpl}alias {qname}"
+            line = f"{here} {tmpl}alias {qname}"
             line += f" ({shown})" if shown else ""
             out.add(line + f" = {node['type']['qualType']}")
         elif kind == "UsingDecl":
             # `using Base::f;` can make a base member public: its removal is a change
-            line = f"{area} using {scope}::{name}"
+            line = f"{here} using {scope}::{name}"
             out.add(line + (f" ({shown})" if shown else ""))
         # friends, static_asserts: not names a consumer calls
 
@@ -633,7 +658,8 @@ def typeid_surface(repo: Path) -> set[str]:
             out.add(
                 f"typeid {tid} parent={line['parent']} group={line['group']} constructor={line['constructor']}"
             )
-    return out
+    # the name is the second word of these lines: `attribute ns3::X::Name ...`
+    return {EXPERIMENTAL_MARK + x if experimental(x.split()[1]) else x for x in out}
 
 
 # --- the record and the check ---------------------------------------------------
@@ -698,7 +724,11 @@ def findings(generated: str, committed: str, base: str | None, title: str, body:
             f"ghcr.io/swarm-routing/ns3-dev:latest-debug` and commit it.\n{diff}"
         )
     if base is not None:
-        gone = sorted(set(items(base)) - set(items(committed)))
+        gone = sorted(
+            x
+            for x in set(items(base)) - set(items(committed))
+            if not x.startswith(EXPERIMENTAL_MARK)
+        )
         if gone and not is_breaking(title, body):
             found.append(
                 f"{len(gone)} API item(s) removed or changed against the base, and the PR is not marked "
@@ -800,6 +830,7 @@ template <typename T, int N = 2> struct Ring { T v[N]; };
 template <> struct Ring<bool, 1> { bool only; };
 inline constexpr unsigned long kMax = static_cast<unsigned long>(sizeof(short)) /* bytes */ << 8;
 struct Base { protected: void run(); };
+struct FuzzyThing { int x; };
 struct Derived : Base { public: using Base::run; };
 template <typename T> T twice(T x) { return x + x; }
 int free_fn(int a, int b = kWireVersion);
@@ -921,6 +952,8 @@ def self_test() -> int:
             "core field swarm::core::Ring<bool, 1>::only (public): bool",
             "core var swarm::core::kMax (constexpr): const unsigned long = static_cast<unsigned long>(sizeof(short)) << 8",
             "core struct swarm::core::Base",
+            "experimental core struct swarm::core::FuzzyThing",
+            "experimental core field swarm::core::FuzzyThing::x (public): int",
             "core function swarm::core::Base::run protected: void ()",
             "core struct swarm::core::Derived : public Base",
             "core using swarm::core::Derived::Base::run (public)",
@@ -955,6 +988,15 @@ def self_test() -> int:
             findings(removed, removed, text, "feat: drop", "text\n\nBREAKING CHANGE: free_fn goes")
             == []
         )
+        # an experimental item may go or change in any release; a frozen one made experimental may not
+        no_exp = HEADER + "".join(f"{x}\n" for x in sorted(got) if "FuzzyThing" not in x)
+        assert findings(no_exp, no_exp, text, "feat: drop", "") == []
+        frozen = text.replace(
+            "experimental core struct swarm::core::FuzzyThing",
+            "core struct swarm::core::FuzzyThing",
+        )
+        f = findings(text, text, frozen, "feat: mark", "")
+        assert len(f) == 1 and "FuzzyThing" in f[0]
         assert findings(removed, removed, None, "feat: drop", "") == [], (
             "no base record: nothing to compare"
         )

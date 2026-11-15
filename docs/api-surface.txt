@@ -4,10 +4,7 @@
 attribute ns3::DeferredPacketQueue::MaxAge initial=TimeValue(Seconds(30)) checker=MakeTimeChecker(Seconds(0))
 attribute ns3::DeferredPacketQueue::MaxPackets initial=UintegerValue(64) checker=MakeUintegerChecker<uint32_t>(1)
 attribute ns3::DeferredPacketQueue::RearmOnEnqueue initial=BooleanValue(false) checker=MakeBooleanChecker()
-attribute ns3::IslLinkMonitor::ServiceTimeAlpha initial=DoubleValue(0.9) checker=MakeDoubleChecker<double>(0.0, 1.0)
-attribute ns3::IslLinkMonitor::TrustAfterFailure initial=BooleanValue(false) checker=MakeBooleanChecker()
 attribute ns3::SwarmRoutingBase::DeferredQueue initial=PointerValue() checker=MakePointerChecker<DeferredPacketQueue>()
-attribute ns3::SwarmRoutingBase::IslHelloSuppression initial=BooleanValue(false) checker=MakeBooleanChecker()
 attribute ns3::SwarmRoutingBase::MaxPeerRoutes initial=UintegerValue(1024) checker=MakeUintegerChecker<uint32_t>(1)
 attribute ns3::SwarmRoutingBase::PurgeInterval initial=TimeValue(MilliSeconds(500)) checker=MakeTimeChecker(MilliSeconds(1))
 attribute ns3::WifiLinkMonitor::MaxNeighbors initial=UintegerValue(256) checker=MakeUintegerChecker<uint32_t>(1)
@@ -21,7 +18,6 @@ core alias swarm::core::testbench::Topology::Link (public) = std::pair<NodeAddre
 core class swarm::core::CountingObserver : public IRouterObserver
 core class swarm::core::DedupHistory
 core class swarm::core::EnergyMetric : public ILinkMetric
-core class swarm::core::FuzzyMetric : public ILinkMetric
 core class swarm::core::IClock
 core class swarm::core::IEnergy
 core class swarm::core::ILinkMetric
@@ -38,12 +34,8 @@ core class swarm::core::WireWriter : public WireFields<WireWriter>
 core class swarm::core::testbench::EventQueue : public IClock
 core class swarm::core::testbench::Rng : public IRng
 core class swarm::core::testbench::Topology
-core enum class swarm::core::FuzzyTerm : std::size_t
 core enum class swarm::core::RouteAction : int
 core enum class swarm::core::testbench::TraceEvent : std::uint8_t
-core enumerator swarm::core::FuzzyTerm::High = 2
-core enumerator swarm::core::FuzzyTerm::Low = 0
-core enumerator swarm::core::FuzzyTerm::Medium = 1
 core enumerator swarm::core::RouteAction::Broadcast = 2
 core enumerator swarm::core::RouteAction::Deliver = 4
 core enumerator swarm::core::RouteAction::DiscardPending = 6
@@ -63,14 +55,6 @@ core field swarm::core::ControlCounters::rxPackets (public): std::uint64_t = 0
 core field swarm::core::ControlCounters::txBroadcasts (public): std::uint64_t = 0
 core field swarm::core::ControlCounters::txBytes (public): std::uint64_t = 0
 core field swarm::core::ControlCounters::txPackets (public): std::uint64_t = 0
-core field swarm::core::FuzzyMemberships::high (public): double = 0.0
-core field swarm::core::FuzzyMemberships::low (public): double = 0.0
-core field swarm::core::FuzzyMemberships::medium (public): double = 0.0
-core field swarm::core::FuzzyMetricParams::delayHigh (public): double = 4.0
-core field swarm::core::FuzzyMetricParams::delayLow (public): double = 1.5
-core field swarm::core::FuzzyMetricParams::rules (public): std::array<std::array<double, kFuzzyTerms>, kFuzzyTerms> = {{ {0.40, 0.70, 1.00}, {0.25, 0.50, 0.70}, {0.10, 0.25, 0.40}, }}
-core field swarm::core::FuzzyMetricParams::stabilityHigh (public): double = 0.75
-core field swarm::core::FuzzyMetricParams::stabilityLow (public): double = 0.25
 core field swarm::core::Hop::node (public): NodeAddress = kInvalidAddress
 core field swarm::core::Hop::time (public): Time = 0.0
 core field swarm::core::HopSignals::residualEnergy (public): double = std::numeric_limits<double>::quiet_NaN()
@@ -136,11 +120,6 @@ core function swarm::core::FixedWireWriter::append public: void (const std::uint
 core function swarm::core::FixedWireWriter::bytes public: std::span<const std::uint8_t> () const
 core function swarm::core::FixedWireWriter::ok public: bool () const
 core function swarm::core::FixedWireWriter::size public: std::size_t () const
-core function swarm::core::FuzzyMemberships::operator[] public: double (FuzzyTerm) const
-core function swarm::core::FuzzyMetric::FuzzyMetric public explicit: void (const FuzzyMetricParams &) [defaults 0={}]
-core function swarm::core::FuzzyMetric::params public: const FuzzyMetricParams &() const
-core function swarm::core::FuzzyMetric::pheromone public: double (const LinkObservation &) const
-core function swarm::core::FuzzyMetric::quality public: double (const LinkObservation &) const
 core function swarm::core::Hop::operator== public constexpr: bool (const Hop &) const = default
 core function swarm::core::IClock::now public virtual: Time () const = 0
 core function swarm::core::IClock::~IClock public virtual constexpr: void () noexcept = default
@@ -250,7 +229,6 @@ core function swarm::core::WireWriter::size public: std::size_t () const
 core function swarm::core::energyHopCost: double (double, double)
 core function swarm::core::evaporationFactor: double (double, Time, Time)
 core function swarm::core::findKindName: const char *(std::span<const KindName>, std::uint8_t)
-core function swarm::core::fuzzyMemberships: FuzzyMemberships (double, double, double)
 core function swarm::core::rouletteSelect: NodeAddress (std::span<const WeightedHop>, IRng &)
 core function swarm::core::selectNextHop: NodeAddress (const PheromoneTable &, NodeAddress, double, IRng &, NodeAddress) [defaults 4=kInvalidAddress]
 core function swarm::core::selectNextHop: NodeAddress (const PheromoneTable &, NodeAddress, double, IRng &, std::vector<WeightedHop> &, NodeAddress) [defaults 5=kInvalidAddress]
@@ -328,8 +306,6 @@ core function swarm::core::testbench::Topology::size public: std::size_t () cons
 core function swarm::core::testbench::Topology::valid public: bool (NodeAddress) const
 core function swarm::core::testbench::TraceRecord::operator== public constexpr: bool (const TraceRecord &) const = default
 core struct swarm::core::ControlCounters
-core struct swarm::core::FuzzyMemberships
-core struct swarm::core::FuzzyMetricParams
 core struct swarm::core::Hop
 core struct swarm::core::HopSignals
 core struct swarm::core::KindName
@@ -350,17 +326,58 @@ core template<typename Msg> class swarm::core::testbench::NodePorts : public INe
 core template<typename T> function swarm::core::testbench::Network::nodeAs public: T &(NodeAddress)
 core var swarm::core::EnergyMetric::kDefaultFloor (public constexpr static): const double = 0.01
 core var swarm::core::EnergyMetric::kName (public constexpr static): const std::string_view = "energy"
-core var swarm::core::FuzzyMetric::kName (public constexpr static): const std::string_view = "fuzzy"
 core var swarm::core::VisitedPath::kHopWireSize (public constexpr static): const std::size_t = 4 + 8
 core var swarm::core::VisitedPath::kMaxCapacity (public constexpr static): const std::size_t = std::numeric_limits<std::uint16_t>::max()
-core var swarm::core::kFuzzyTerms (constexpr): const std::size_t = 3
 core var swarm::core::kInvalidAddress (constexpr): const NodeAddress = -1
 core var swarm::core::kNoTimer (constexpr): const TimerHandle = 0
 core var swarm::core::kRouteActionCount (constexpr): const std::size_t = static_cast<std::size_t>(RouteAction::DiscardPending) + 1
 core var swarm::core::testbench::EventQueue::kDefaultMaxPending (public constexpr static): const std::size_t = std::size_t{1} << 20
 core var swarm::core::testbench::Rng::kChannelStream (public constexpr static): const std::uint64_t = ~0ull
+experimental attribute ns3::IslLinkMonitor::ServiceTimeAlpha initial=DoubleValue(0.9) checker=MakeDoubleChecker<double>(0.0, 1.0)
+experimental attribute ns3::IslLinkMonitor::TrustAfterFailure initial=BooleanValue(false) checker=MakeBooleanChecker()
+experimental attribute ns3::SwarmRoutingBase::IslHelloSuppression initial=BooleanValue(false) checker=MakeBooleanChecker()
+experimental core class swarm::core::FuzzyMetric : public ILinkMetric
+experimental core enum class swarm::core::FuzzyTerm : std::size_t
+experimental core enumerator swarm::core::FuzzyTerm::High = 2
+experimental core enumerator swarm::core::FuzzyTerm::Low = 0
+experimental core enumerator swarm::core::FuzzyTerm::Medium = 1
+experimental core field swarm::core::FuzzyMemberships::high (public): double = 0.0
+experimental core field swarm::core::FuzzyMemberships::low (public): double = 0.0
+experimental core field swarm::core::FuzzyMemberships::medium (public): double = 0.0
+experimental core field swarm::core::FuzzyMetricParams::delayHigh (public): double = 4.0
+experimental core field swarm::core::FuzzyMetricParams::delayLow (public): double = 1.5
+experimental core field swarm::core::FuzzyMetricParams::rules (public): std::array<std::array<double, kFuzzyTerms>, kFuzzyTerms> = {{ {0.40, 0.70, 1.00}, {0.25, 0.50, 0.70}, {0.10, 0.25, 0.40}, }}
+experimental core field swarm::core::FuzzyMetricParams::stabilityHigh (public): double = 0.75
+experimental core field swarm::core::FuzzyMetricParams::stabilityLow (public): double = 0.25
+experimental core function swarm::core::FuzzyMemberships::operator[] public: double (FuzzyTerm) const
+experimental core function swarm::core::FuzzyMetric::FuzzyMetric public explicit: void (const FuzzyMetricParams &) [defaults 0={}]
+experimental core function swarm::core::FuzzyMetric::params public: const FuzzyMetricParams &() const
+experimental core function swarm::core::FuzzyMetric::pheromone public: double (const LinkObservation &) const
+experimental core function swarm::core::FuzzyMetric::quality public: double (const LinkObservation &) const
+experimental core function swarm::core::fuzzyMemberships: FuzzyMemberships (double, double, double)
+experimental core struct swarm::core::FuzzyMemberships
+experimental core struct swarm::core::FuzzyMetricParams
+experimental core var swarm::core::FuzzyMetric::kName (public constexpr static): const std::string_view = "fuzzy"
+experimental core var swarm::core::kFuzzyTerms (constexpr): const std::size_t = 3
+experimental ns3 alias ns3::IslLinkMonitor::LinkChangeCallback (public) = void (*)(Ipv4Address, bool)
+experimental ns3 class ns3::IslLinkMonitor : public Object, public swarm::core::INeighborProvider, public swarm::core::ILinkState
+experimental ns3 function ns3::IslLinkMonitor::DoDispose protected: void ()
+experimental ns3 function ns3::IslLinkMonitor::GetTypeId public static: TypeId ()
+experimental ns3 function ns3::IslLinkMonitor::Install public: void (Ptr<Node>)
+experimental ns3 function ns3::IslLinkMonitor::IsAuthoritative public: bool (uint32_t) const
+experimental ns3 function ns3::IslLinkMonitor::IslLinkMonitor public: void ()
+experimental ns3 function ns3::IslLinkMonitor::NotifyInterface public: void (uint32_t, bool)
+experimental ns3 function ns3::IslLinkMonitor::PeerOnInterface public: Ipv4Address (uint32_t) const
+experimental ns3 function ns3::IslLinkMonitor::macQueueLength public: int (swarm::core::NodeAddress) const
+experimental ns3 function ns3::IslLinkMonitor::macServiceTime public: swarm::core::Time (swarm::core::NodeAddress) const
+experimental ns3 function ns3::IslLinkMonitor::neighbors public: std::vector<swarm::core::NodeAddress> () const
+experimental ns3 function ns3::SwarmRoutingBase::BeaconSuppressed protected: bool (uint32_t) const
+experimental ns3 function ns3::SwarmRoutingBase::IsLinkStateNeighbor protected: bool (Ipv4Address) const
+experimental ns3 function ns3::SwarmRoutingBase::OnLinkUp protected virtual: void (Ipv4Address)
+experimental trace ns3::IslLinkMonitor::LinkChange callback=ns3::IslLinkMonitor::LinkChangeCallback
+experimental trace ns3::IslLinkMonitor::PeerLinkChange callback=ns3::IslLinkMonitor::LinkChangeCallback
+experimental typeid ns3::IslLinkMonitor parent=Object group=SwarmCore constructor=yes
 ns3 alias ns3::DeferredPacketQueue::DropCallback (public) = void (*)(Ptr<const Packet>, const Ipv4Header &, DeferredDropReason)
-ns3 alias ns3::IslLinkMonitor::LinkChangeCallback (public) = void (*)(Ipv4Address, bool)
 ns3 alias ns3::SwarmRoutingBase::ControlRxTracedCallback (public) = void (*)(uint8_t, uint32_t)
 ns3 alias ns3::SwarmRoutingBase::ControlTxTracedCallback (public) = void (*)(uint8_t, bool, uint32_t)
 ns3 alias ns3::SwarmRoutingBase::DataDecisionTracedCallback (public) = void (*)(Ipv4Address, swarm::core::RouteAction)
@@ -373,7 +390,6 @@ ns3 alias ns3::WifiLinkMonitor::UndeliveredCallback (public) = void (*)(Ptr<cons
 ns3 class ns3::BufferWireWriter : public swarm::core::WireFields<BufferWireWriter>
 ns3 class ns3::DeferredPacketQueue : public Object
 ns3 class ns3::EnergyMetricHook : public Object, public swarm::core::IEnergy
-ns3 class ns3::IslLinkMonitor : public Object, public swarm::core::INeighborProvider, public swarm::core::ILinkState
 ns3 class ns3::NullEnergy : public swarm::core::IEnergy
 ns3 class ns3::NullLinkQuality : public swarm::core::ILinkQuality
 ns3 class ns3::NullLinkState : public swarm::core::ILinkState
@@ -450,16 +466,6 @@ ns3 function ns3::EnergyMetricHook::GetTypeId public static: TypeId ()
 ns3 function ns3::EnergyMetricHook::Install public: bool (Ptr<Node>)
 ns3 function ns3::EnergyMetricHook::Install public: void (Ptr<energy::EnergySource>)
 ns3 function ns3::EnergyMetricHook::residualEnergyFraction public: double () const
-ns3 function ns3::IslLinkMonitor::DoDispose protected: void ()
-ns3 function ns3::IslLinkMonitor::GetTypeId public static: TypeId ()
-ns3 function ns3::IslLinkMonitor::Install public: void (Ptr<Node>)
-ns3 function ns3::IslLinkMonitor::IsAuthoritative public: bool (uint32_t) const
-ns3 function ns3::IslLinkMonitor::IslLinkMonitor public: void ()
-ns3 function ns3::IslLinkMonitor::NotifyInterface public: void (uint32_t, bool)
-ns3 function ns3::IslLinkMonitor::PeerOnInterface public: Ipv4Address (uint32_t) const
-ns3 function ns3::IslLinkMonitor::macQueueLength public: int (swarm::core::NodeAddress) const
-ns3 function ns3::IslLinkMonitor::macServiceTime public: swarm::core::Time (swarm::core::NodeAddress) const
-ns3 function ns3::IslLinkMonitor::neighbors public: std::vector<swarm::core::NodeAddress> () const
 ns3 function ns3::NullEnergy::residualEnergyFraction public: double () const
 ns3 function ns3::NullLinkQuality::sinrDbFrom public: double (swarm::core::NodeAddress) const
 ns3 function ns3::NullLinkState::macQueueLength public: int (swarm::core::NodeAddress) const
@@ -491,7 +497,6 @@ ns3 function ns3::SwarmRng::SwarmRng public: void ()
 ns3 function ns3::SwarmRng::uniform public: double ()
 ns3 function ns3::SwarmRng::uniformInt public: int (int)
 ns3 function ns3::SwarmRoutingBase::AssignStreams public virtual: int64_t (int64_t)
-ns3 function ns3::SwarmRoutingBase::BeaconSuppressed protected: bool (uint32_t) const
 ns3 function ns3::SwarmRoutingBase::BroadcastBeacon protected: uint32_t (Ptr<Packet>)
 ns3 function ns3::SwarmRoutingBase::BroadcastControl protected: void (Ptr<Packet>)
 ns3 function ns3::SwarmRoutingBase::ClearPeerRoute protected: void (Ipv4Address)
@@ -515,7 +520,6 @@ ns3 function ns3::SwarmRoutingBase::GetRouterStats public: swarm::core::RouterSt
 ns3 function ns3::SwarmRoutingBase::GetTypeId public static: TypeId ()
 ns3 function ns3::SwarmRoutingBase::HoldClassFor protected virtual: uint8_t (Ipv4Address)
 ns3 function ns3::SwarmRoutingBase::IsDown public: bool () const
-ns3 function ns3::SwarmRoutingBase::IsLinkStateNeighbor protected: bool (Ipv4Address) const
 ns3 function ns3::SwarmRoutingBase::IsMyAddress protected: bool (Ipv4Address) const
 ns3 function ns3::SwarmRoutingBase::KindName public: std::string (uint8_t) const
 ns3 function ns3::SwarmRoutingBase::LinkQuality protected: const swarm::core::ILinkQuality &() const
@@ -532,7 +536,6 @@ ns3 function ns3::SwarmRoutingBase::OnDataForwarded protected virtual: void (Ptr
 ns3 function ns3::SwarmRoutingBase::OnDataReceived protected virtual: bool (Ptr<const Packet>, const Ipv4Header &, Ipv4Address)
 ns3 function ns3::SwarmRoutingBase::OnDataUndelivered protected virtual: void (Ptr<const Packet>, const Ipv4Header &, Ipv4Address, Ipv4Address)
 ns3 function ns3::SwarmRoutingBase::OnLinkFailure protected virtual: void (Ipv4Address)
-ns3 function ns3::SwarmRoutingBase::OnLinkUp protected virtual: void (Ipv4Address)
 ns3 function ns3::SwarmRoutingBase::OnTxFailure protected virtual: void (Ipv4Address, Mac48Address, Ptr<const Packet>, const Ipv4Header *, bool)
 ns3 function ns3::SwarmRoutingBase::PrintRoutingTable public: void (Ptr<OutputStreamWrapper>, Time::Unit) const [defaults 1=Time::S]
 ns3 function ns3::SwarmRoutingBase::RecvControl protected virtual: void (Ptr<Packet>, Ipv4Address, Ipv4Address) = 0
@@ -590,8 +593,6 @@ ns3 var ns3::SwarmLifecycleHelper::kMaxEntries (public constexpr static): const 
 ns3 var ns3::kDeferredHoldClasses (constexpr): const uint8_t = 8
 ns3 var ns3::kSwarmCoreApiVersion (constexpr): const uint32_t = 2
 trace ns3::DeferredPacketQueue::Drop callback=ns3::DeferredPacketQueue::DropCallback
-trace ns3::IslLinkMonitor::LinkChange callback=ns3::IslLinkMonitor::LinkChangeCallback
-trace ns3::IslLinkMonitor::PeerLinkChange callback=ns3::IslLinkMonitor::LinkChangeCallback
 trace ns3::SwarmRoutingBase::ControlRx callback=ns3::SwarmRoutingBase::ControlRxTracedCallback
 trace ns3::SwarmRoutingBase::ControlTx callback=ns3::SwarmRoutingBase::ControlTxTracedCallback
 trace ns3::SwarmRoutingBase::DataDecision callback=ns3::SwarmRoutingBase::DataDecisionTracedCallback
@@ -603,7 +604,6 @@ trace ns3::WifiLinkMonitor::TxFailure callback=ns3::WifiLinkMonitor::TxFailureCa
 trace ns3::WifiLinkMonitor::Undelivered callback=ns3::WifiLinkMonitor::UndeliveredCallback
 typeid ns3::DeferredPacketQueue parent=Object group=SwarmCore constructor=yes
 typeid ns3::EnergyMetricHook parent=Object group=SwarmCore constructor=yes
-typeid ns3::IslLinkMonitor parent=Object group=SwarmCore constructor=yes
 typeid ns3::SwarmPrevHopTag parent=Tag group=SwarmCore constructor=yes
 typeid ns3::SwarmRoutingBase parent=Ipv4RoutingProtocol group=SwarmCore constructor=no
 typeid ns3::WifiLinkMonitor parent=Object group=SwarmCore constructor=yes
