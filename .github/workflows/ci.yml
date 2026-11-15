@@ -101,34 +101,107 @@ jobs:
       id-token: write
     uses: swarm-routing/.github/.github/workflows/reusable-codecov.yml@main
 
-  # The core microbenchmarks (core/bench/, #45): built against Google Benchmark
-  # at the commit and archive hash core/CMakeLists.txt pins, run once, the JSON
-  # kept as an artifact. Report-only and not a required check: shared runners
-  # are too noisy for a gate. PR-vs-base comparison and history on main are
-  # swarm-routing/.github#32.
+  # The core microbenchmarks (core/bench/, #45). On a PR (#170): the base and
+  # the head built on the same runner, run interleaved three times each, and
+  # the median CPU time per benchmark compared by tools/bench/bench_compare.py
+  # (the head is the PR's merge commit, so the delta is the PR's change alone):
+  # the table in the job summary and in one PR comment (updated in place), a
+  # ::warning:: for a benchmark more than 15 % slower. On main and in the merge
+  # queue: the head alone. Report-only and not a required check: shared runners
+  # are too noisy for a gate. Each side runs its own core/bench/ source.
   bench:
     if: inputs.ns3-versions == ''
     runs-on: ubuntu-24.04
-    timeout-minutes: 15
+    timeout-minutes: 25
+    # A newer push to the PR cancels this run, so an older run never
+    # overwrites a newer comparison in the comment.
+    concurrency:
+      group: bench-${{ github.event.pull_request.number || github.ref }}
+      cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+    permissions:
+      contents: read
+      pull-requests: write  # the delta comment (same-repository PRs only)
+    env:
+      BENCH_ARGS: --benchmark_repetitions=3 --benchmark_min_time=0.2s --benchmark_out_format=json
     steps:
       - name: Harden the runner (audit egress)
         uses: step-security/harden-runner@1d88384fd173af6ecb012dfd0264a306b711241a # v2.22.4
+        timeout-minutes: 2  # its download and start take seconds (swarm-routing/.github#164)
         with:
           egress-policy: audit
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
+          fetch-depth: 0
           persist-credentials: false
-      - name: Build (Release)
+      - name: The comparison script's self-test
+        run: python3 -I tools/bench/bench_compare.py --self-test
+      - name: Build the head (Release)
         run: |
-          cmake -S core -B build/bench -DCMAKE_BUILD_TYPE=Release -DSWARM_CORE_BENCH=ON
-          cmake --build build/bench -j "$(nproc)" --target swarm_core_bench
-      - name: Run
+          cmake -S core -B "$RUNNER_TEMP/head" -DCMAKE_BUILD_TYPE=Release -DSWARM_CORE_BENCH=ON
+          cmake --build "$RUNNER_TEMP/head" -j "$(nproc)" --target swarm_core_bench
+      - name: Build the base (PR only)
+        if: github.event_name == 'pull_request'
+        env:
+          BASE: ${{ github.event.pull_request.base.sha }}
         run: |
-          build/bench/swarm_core_bench --benchmark_repetitions=5 \
-            --benchmark_report_aggregates_only --benchmark_out=bench.json \
-            --benchmark_out_format=json
+          git worktree add "$RUNNER_TEMP/base-src" "$BASE"
+          if [ ! -f "$RUNNER_TEMP/base-src/core/bench/swarm-core-bench.cc" ]; then
+            echo "The base has no core/bench; every row is new."
+            echo "NO_BASE=1" >> "$GITHUB_ENV"
+            exit 0
+          fi
+          cmake -S "$RUNNER_TEMP/base-src/core" -B "$RUNNER_TEMP/base" -DCMAKE_BUILD_TYPE=Release -DSWARM_CORE_BENCH=ON
+          cmake --build "$RUNNER_TEMP/base" -j "$(nproc)" --target swarm_core_bench
+      - name: Run, base and head interleaved
+        env:
+          EVENT: ${{ github.event_name }}
+        run: |
+          mkdir -p bench
+          rounds=1
+          [ "$EVENT" != pull_request ] || rounds=3
+          for i in $(seq "$rounds"); do
+            if [ "$EVENT" = pull_request ] && [ -z "${NO_BASE:-}" ]; then
+              # shellcheck disable=SC2086  # BENCH_ARGS is a list of flags
+              "$RUNNER_TEMP/base/swarm_core_bench" $BENCH_ARGS --benchmark_out="bench/base-$i.json" > /dev/null
+            fi
+            # shellcheck disable=SC2086
+            "$RUNNER_TEMP/head/swarm_core_bench" $BENCH_ARGS --benchmark_out="bench/head-$i.json" > /dev/null
+          done
+      - name: Compare against the base (PR only)
+        if: github.event_name == 'pull_request'
+        env:
+          HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+          MERGE_SHA: ${{ github.sha }}
+          BASE_SHA: ${{ github.event.pull_request.base.sha }}
+        run: |
+          shopt -s nullglob
+          python3 -I tools/bench/bench_compare.py compare --threshold 15 \
+            --base bench/base-*.json --head bench/head-*.json --markdown bench/delta.md
+          {
+            cat bench/delta.md
+            echo
+            echo "CPU: $(grep -m1 'model name' /proc/cpuinfo | cut -d: -f2- | sed 's/^ *//'). Head: the merge of $HEAD_SHA into the base ($MERGE_SHA); base $BASE_SHA."
+          } > bench/comment.md
+          cat bench/comment.md >> "$GITHUB_STEP_SUMMARY"
+      - name: Post or update the delta comment (PR from this repository only)
+        if: github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name == github.repository
+        continue-on-error: true  # report-only: a failed comment never fails the job
+        timeout-minutes: 2
+        env:
+          GH_TOKEN: ${{ github.token }}
+          PR: ${{ github.event.pull_request.number }}
+        run: |
+          marker='<!-- swarm-core-bench-delta -->'
+          printf '%s\n%s' "$marker" "$(cat bench/comment.md)" > bench/body.md
+          id=$(gh api "repos/$GITHUB_REPOSITORY/issues/$PR/comments" --paginate \
+                 --jq ".[] | select(.user.login == \"github-actions[bot]\" and (.body | startswith(\"$marker\"))) | .id" | head -1)
+          if [ -n "$id" ]; then
+            gh api -X PATCH "repos/$GITHUB_REPOSITORY/issues/comments/$id" -F body=@bench/body.md > /dev/null
+          else
+            gh api "repos/$GITHUB_REPOSITORY/issues/$PR/comments" -F body=@bench/body.md > /dev/null
+          fi
       - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
           name: core-bench
-          path: bench.json
+          path: bench/
           retention-days: 7
