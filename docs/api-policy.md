@@ -1,7 +1,8 @@
 # API and deprecation policy
 
-**v1.0.0 freezes swarm-core's API** (#83; released <!-- TODO(freeze): date
-and the version DOI read from Zenodo -->). This page is what swarm-core
+**v1.0.0 freezes swarm-core's API** (#83; released 2026-11-16,
+[release](https://github.com/swarm-routing/ns3-swarm-core/releases/tag/v1.0.0), Zenodo version DOI
+[10.5281/zenodo.24268942](https://doi.org/10.5281/zenodo.24268942)). This page is what swarm-core
 promises its consumers from then on, how that promise is versioned, and how
 an API is retired. It is the written policy the v1.0.0 row of the
 [roadmap](roadmap.md) asked for. The 0.x rules at the end are kept as the

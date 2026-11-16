@@ -7,7 +7,7 @@ before changing anything. Org-wide conventions:
 
 ## What this repo is
 
-**Status: primitives in `core/` (#8), ns-3 glue in `model/` and `helper/` (#9), node lifecycle (#43).** CI runs every org quality gate on the module. API version 2 (`kSwarmCoreApiVersion`).
+**Status: primitives in `core/` (#8), ns-3 glue in `model/` and `helper/` (#9), node lifecycle (#43).** CI runs every org quality gate on the module. v1.0.0 froze the API (#83, `docs/api-policy.md`): API version 2 (`kSwarmCoreApiVersion`) for all of 1.x.
 
 The shared ns-3 contrib module `swarm-core` (`libns3.<ver>-swarm-core`) every
 swarm-routing protocol links against: simulator-agnostic C++23 primitives
@@ -88,7 +88,7 @@ tools/release/      dist.sh: the release asset (swarm-core-<ver>.tar.gz), checke
                     core/ alone at C++23, strict warnings, ctest, again under ASan + UBSan, the consumer check; #99), pr-title.yml,
                     release.yml (the org reusable-release.yml, then the ns3-swarm-core image), api-surface.yml (check
                     `api-surface`: the API record is current and nothing in it removed without a breaking mark;
-                    report-only until the v1.0.0 freeze, #83)
+                    a required check since the v1.0.0 freeze, #83)
 ```
 
 ## Build & verify
@@ -173,7 +173,7 @@ The public API (`docs/api-policy.md` "What the API is") is recorded in
 registrations; a PR that adds to the API commits the regenerated file, and
 one that removes or changes a line must be a breaking change (`!` in its
 title or a `BREAKING CHANGE:` footer). The `api-surface` workflow checks both,
-report-only until the v1.0.0 freeze (#83). Needs `clang++-18` (the script's
+strict and a required check since the v1.0.0 freeze (#83). Needs `clang++-18` (the script's
 `CLANG_VERSION`; `apt-get install clang-18`) and docker; the self-test runs
 under any clang:
 
