@@ -80,6 +80,7 @@ tools/checks/       check-core-consumer.sh: core/ in another CMake project gets 
                     check-cxx-standard.py: core/'s C++ standard against an ns-3 tree's minimum (#141);
                     check-api-surface.py: docs/api-surface.txt, the generated record of the public API, and the guard that
                     a PR removing or changing an item in it is marked breaking (#83) — MIT OR GPL-2.0-only
+tools/bench/        bench_compare.py: the PR-vs-base microbenchmark table and its +15 % warning (#170) — MIT OR GPL-2.0-only
 tools/release/      dist.sh: the release asset (swarm-core-<ver>.tar.gz), checked in a clean ns3-dev tree; `make dist` — MIT OR GPL-2.0-only
 .cz.toml, VERSION   Commitizen config and the version it bumps; releases run through release.yml
 .github/workflows/  ci.yml (reusable-ns3-ci: strict warnings, coverage, determinism, format, headers; `cxx-standard`:
@@ -120,13 +121,25 @@ cmake --install build/core --prefix /tmp/swarm-core   # the CMake package swarm-
 A file added to `core/` goes into `core/swarm-core-sources.cmake` only: both
 builds read it.
 
-Microbenchmarks of the per-packet primitives (`core/bench/`, dev-only; fetches
-Google Benchmark at the commit and hash pinned in `core/CMakeLists.txt`; CI
-builds and runs them once per PR, report-only, swarm-routing/.github#32):
+Microbenchmarks of the per-packet primitives and the protocols' hot paths
+(`core/bench/`: a full frame encoded and decoded, `evaporate()` with ages,
+the roulette draw, `DedupHistory::seen()` among them; dev-only; fetches
+Google Benchmark at the commit and hash pinned in `core/CMakeLists.txt`). On a
+PR, CI's `bench` job builds the base and the head on one runner, runs them
+interleaved three times each and compares the median CPU time per benchmark
+with `tools/bench/bench_compare.py`: the table goes to the job summary and to
+one PR comment it updates in place, and a benchmark more than 15 % slower gets
+a warning. Report-only, never a required check (#170):
 
 ```bash
 cmake -S core -B build/bench -DCMAKE_BUILD_TYPE=Release -DSWARM_CORE_BENCH=ON
 cmake --build build/bench --target swarm_core_bench && build/bench/swarm_core_bench
+# the PR comparison by hand: a base build in build/base-bench, then
+for i in 1 2 3; do
+  build/base-bench/swarm_core_bench --benchmark_repetitions=3 --benchmark_min_time=0.2s --benchmark_out_format=json --benchmark_out=base-$i.json
+  build/bench/swarm_core_bench --benchmark_repetitions=3 --benchmark_min_time=0.2s --benchmark_out_format=json --benchmark_out=head-$i.json
+done
+python3 -I tools/bench/bench_compare.py compare --base base-*.json --head head-*.json   # --self-test checks the script
 ```
 
 Automatic runs (push, PR: `latest`) must pass `test.py -s swarm-core` on debug

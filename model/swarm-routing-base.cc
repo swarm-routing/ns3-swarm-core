@@ -171,13 +171,8 @@ void SwarmRoutingBase::DoInitialize() {
     if (m_periodicPurge) {
         m_purgeTimer.Schedule(m_purgeInterval);
     }
-    if (Ptr<Node> node = NodeOf()) {
-        if (Ptr<WifiLinkMonitor> wifi = node->GetObject<WifiLinkMonitor>()) {
-            wifi->TraceConnectWithoutContext("TxFailure",
-                                             MakeCallback(&SwarmRoutingBase::WifiTxFailure, this));
-        }
-    }
     m_initialized = true;
+    ConnectWifiMonitor();
     ConnectIslMonitor();
     Ipv4RoutingProtocol::DoInitialize();
 }
@@ -247,7 +242,8 @@ void SwarmRoutingBase::NotifyNewAggregate() {
     // A monitor aggregated to the node after the ports were read (#46).
     m_portsStale = true;
     if (m_initialized) {
-        ConnectIslMonitor();  // one aggregated after initialisation (#4)
+        ConnectWifiMonitor();  // one aggregated after initialisation (#166)
+        ConnectIslMonitor();   // one aggregated after initialisation (#4)
     }
     Ipv4RoutingProtocol::NotifyNewAggregate();
 }
@@ -794,6 +790,17 @@ bool SwarmRoutingBase::IsLinkStateNeighbor(Ipv4Address neighbor) const {
         }
     }
     return false;
+}
+
+void SwarmRoutingBase::ConnectWifiMonitor() {
+    Ptr<Node> node = NodeOf();
+    Ptr<WifiLinkMonitor> wifi = node ? node->GetObject<WifiLinkMonitor>() : nullptr;
+    if (m_wifiConnected || !wifi) {
+        return;
+    }
+    m_wifiConnected = true;
+    wifi->TraceConnectWithoutContext("TxFailure",
+                                     MakeCallback(&SwarmRoutingBase::WifiTxFailure, this));
 }
 
 void SwarmRoutingBase::ConnectIslMonitor() {
