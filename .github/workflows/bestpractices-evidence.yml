@@ -1,0 +1,82 @@
+# Managed by swarm-routing/.github tools/org-sync: edit templates/workflows/bestpractices-evidence.yml there.
+name: bestpractices evidence
+
+# A push to main that changes a file the OpenSSF Best Practices answers are
+# read from asks org-bot (swarm-routing/.github) to regenerate this
+# repository's .bestpractices.json now rather than at its next daily run:
+# repository_dispatch `bestpractices` with this repository's name (#531). The
+# bot opens a PR only when the file changes. The paths are the evidence
+# `bestpractices answers` reads by name; a source file that starts calling a
+# crypto library is caught by the daily run. Report-only: never a gate, and a
+# missing token only skips the nudge.
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'README*'
+      - 'CONTRIBUTING.md'
+      - '.github/CONTRIBUTING.md'
+      - 'docs/**'
+      - 'SECURITY.md'
+      - '.github/SECURITY.md'
+      - 'LICENSE*'
+      - 'COPYING'
+      - 'LICENSING.md'
+      - 'CHANGELOG*'
+      - 'NEWS.md'
+      - '.cz.toml'
+      - 'VERSION'
+      - 'AGENTS.md'
+      - 'Makefile'
+      - '**/CMakeLists.txt'
+      - '**/*.cmake'
+      - '**/pyproject.toml'
+      - '**/Dockerfile'
+      - '**/Doxyfile'
+      - 'mkdocs.yml'
+      - '**/test/**'
+      - '**/tests/**'
+      - '**/test_*.py'
+      - '.github/workflows/**'
+      - '.github/org-sync.toml'
+
+permissions: {}
+
+jobs:
+  notify:
+    if: ${{ !github.event.repository.private }}
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    permissions: {}
+    steps:
+      - name: Harden the runner (audit egress)
+        uses: step-security/harden-runner@1d88384fd173af6ecb012dfd0264a306b711241a # v2.22.4
+        timeout-minutes: 2
+        with:
+          egress-policy: audit
+      - name: Bot token
+        id: bot
+        continue-on-error: true
+        timeout-minutes: 2
+        uses: swarm-routing/.github/.github/actions/bot-token@main
+        with:
+          app-id: ${{ secrets.BOT_APP_ID }}
+          private-key: ${{ secrets.BOT_APP_PRIVATE_KEY }}
+          fallback-token: ${{ secrets.ORG_BOT_TOKEN }}
+      - name: Tell org-bot
+        continue-on-error: true
+        timeout-minutes: 2
+        env:
+          GH_TOKEN: ${{ steps.bot.outputs.token }}
+        run: |
+          if [ -z "$GH_TOKEN" ]; then
+            echo "::notice::no bot token: org-bot's daily run regenerates .bestpractices.json"
+            exit 0
+          fi
+          if timeout 45 gh api -X POST repos/swarm-routing/.github/dispatches \
+               -f event_type=bestpractices \
+               -f "client_payload[repository]=${GITHUB_REPOSITORY}" > /dev/null; then
+            echo "Sent bestpractices to swarm-routing/.github for ${GITHUB_REPOSITORY}" >> "$GITHUB_STEP_SUMMARY"
+          else
+            echo "::warning::repository_dispatch bestpractices failed or timed out; org-bot's daily run catches it"
+          fi
