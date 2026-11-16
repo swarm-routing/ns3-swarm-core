@@ -272,10 +272,18 @@ uses the code. The differences:
     Every node of a network runs the same mode, as for the MTU (decision
     7): a packet the kernel forwards carries no frame, so a baseline node on
     its path could not relay it. Kernel mode needs the kernel's own
-    forwarding switched on, which the baseline never touches (decision 12);
-    which setting, and how it is restored when the daemon stops or is
-    killed, is decided when the mode is built, with the routing-protocol
-    number (question 5).
+    forwarding switched on, which the baseline never touches (decision 12).
+    The daemon switches it on only for the address families the overlay
+    carries (the IPv4 and IPv6 forwarding settings; scoped to the overlay
+    and underlay interfaces where the kernel allows it per interface,
+    *to verify on a kernel*). Before changing a setting it writes the
+    previous value to a state file; a clean stop restores every value from
+    that file and removes it; after a kill, the next start finds the file,
+    restores the values first and only then proceeds. The kernel routes are
+    removed the same way, by their routing-protocol number (question 5).
+    None of this is tested: the mode is not built before F2, and the first
+    change that builds it tests the restore after a kill, as
+    swarm-routing/.github#256 asks for the baseline.
     It is not built before F2's result is recorded on
     swarm-routing/.github#269, and not at all if F2 fails its threshold.
     *Reason:* the only kernel mode worth building is the one whose cost has
