@@ -517,10 +517,18 @@ because the issue threads were thorough. Caveman the chat, not the record.
   no DOI, by its publisher's or institution's page; never point into or name
   the private paper library there.
 - An ns-3 bug, or an investigation of one, always gets an RCAPA ticket in
-  swarm-routing/ns3-tools first (form *ns-3 bug (RCAPA)*, label `rcapa`, ID
-  `NS3-NNN`); its doc in `docs/ns3-rcapa/` and its `docs/ns3-bugs.md` row
-  follow, and every workaround links the ID. Upstream reports are filed by
-  the maintainer, never by an agent (CONTRIBUTING "ns-3 bugs (RCAPA)").
+  swarm-routing/ns3-tools first (form *ns-3 bug (RCAPA)*, labels `rcapa` and
+  `ns3-upstream`, ID `NS3-NNN`); its doc in `docs/ns3-rcapa/` and its
+  `docs/ns3-bugs.md` row follow, and every workaround links the ID. Upstream
+  reports go out only through swarm-routing/ns3-upstream-report (CONTRIBUTING
+  "ns-3 bugs (RCAPA)"). A regression in a published release of our own code
+  (it worked in a release, a DOI, PyPI or a vcpkg port, and broke after a
+  change; `git tag --contains <commit>` decides, never memory) gets an RCAPA
+  too, in the repository that owns it: ticket first (form *Regression in a
+  release (RCAPA)*, `<PREFIX>-NNN`), then `docs/rcapa/rcapa-<name>.md` and
+  its row in `docs/rcapa/README.md`, the project's flow; the ticket stays
+  open until a release carries the fix. A bug or change that never reached a
+  release, or a typo with no behaviour, needs none (CONTRIBUTING "RCAPA").
 <!-- org-sync:end agent-defaults -->
 
 ## Where to look
