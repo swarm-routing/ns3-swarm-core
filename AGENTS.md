@@ -521,15 +521,19 @@ because the issue threads were thorough. Caveman the chat, not the record.
   `ns3-upstream`, ID `NS3-NNN`); its doc in `docs/ns3-rcapa/` and its
   `docs/ns3-bugs.md` row follow, and every workaround links the ID. Upstream
   reports go out only through swarm-routing/ns3-upstream-report (CONTRIBUTING
-  "ns-3 bugs (RCAPA)"). A regression in a published release of our own code
-  (it worked in a release, a DOI, PyPI or a vcpkg port, and broke after a
-  change; `git tag --contains <commit>` decides, or, in a repository with no
-  tags, its `docs/rcapa/README.md`; never memory) gets an RCAPA
-  too, in the repository that owns it: ticket first (form *Regression in a
-  release (RCAPA)*, `<PREFIX>-NNN`), then `docs/rcapa/rcapa-<name>.md` and
-  its row in `docs/rcapa/README.md`, the project's flow; the ticket stays
-  open until a release carries the fix. A bug or change that never reached a
-  release, or a typo with no behaviour, needs none (CONTRIBUTING "RCAPA").
+  "ns-3 bugs (RCAPA)"). A regression in a published library, a version
+  another project consumes (a swarm-core or ns3-tools release through its
+  lock, PyPI, a vcpkg port), gets an RCAPA too, in that library's repository,
+  even when a consumer finds it (a swarm-core lock bump that breaks
+  AntHocNet is an `SWC-NNN` in ns3-swarm-core, verified with AntHocNet's
+  failing check): ticket first (form *Regression in a release (RCAPA)*,
+  `<PREFIX>-NNN`), then `docs/rcapa/rcapa-<name>.md` and its row in
+  `docs/rcapa/README.md`; the ticket stays open until a release carries the
+  fix. A Docker image gets one only when its composition is the cause.
+  None for a bug that never reached a published version, for changes in
+  .github, the site, skills, benchmarks or ns3-upstream-report, or for a
+  typo with no behaviour; the pins and `git tag --contains <commit>` decide,
+  never memory (CONTRIBUTING "RCAPA").
 <!-- org-sync:end agent-defaults -->
 
 ## Where to look
