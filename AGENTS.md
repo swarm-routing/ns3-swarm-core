@@ -523,7 +523,8 @@ because the issue threads were thorough. Caveman the chat, not the record.
   reports go out only through swarm-routing/ns3-upstream-report (CONTRIBUTING
   "ns-3 bugs (RCAPA)"). A regression in a published release of our own code
   (it worked in a release, a DOI, PyPI or a vcpkg port, and broke after a
-  change; `git tag --contains <commit>` decides, never memory) gets an RCAPA
+  change; `git tag --contains <commit>` decides, or, in a repository with no
+  tags, its `docs/rcapa/README.md`; never memory) gets an RCAPA
   too, in the repository that owns it: ticket first (form *Regression in a
   release (RCAPA)*, `<PREFIX>-NNN`), then `docs/rcapa/rcapa-<name>.md` and
   its row in `docs/rcapa/README.md`, the project's flow; the ticket stays
