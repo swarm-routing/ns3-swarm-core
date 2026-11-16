@@ -69,7 +69,10 @@ description = "swarm-core, the shared ns-3 contrib module every swarm-routing pr
 homepage = "https://swarm-routing.github.io/projects/ns3-swarm-core/"
 topics = ["ns-3", "swarm-intelligence", "routing-protocol", "manet", "cpp23", "pheromone", "network-simulation", "library"]
 ruleset = "protocol"
-required_checks = ["ci / ns-latest debug", "ci / ns-latest sanitized", "ci / format", "ci / headers / licence", "core", "cxx-standard", "check / org-sync", "title / title", "review / coderabbit"]
+required_checks = ["ci / ns-latest debug", "ci / ns-latest sanitized", "ci / format", "ci / headers / licence", "core", "cxx-standard", "check / org-sync", "title / title", "review / coderabbit", "api-surface"]
+# api-surface: the API record (docs/api-surface.txt) is current and nothing in it is removed or
+# changed without a breaking mark (#83); required from the v1.0.0 freeze. Applies when
+# swarm-routing/.github's repo-settings is dispatched with mode apply after this merges.
 # Merge through a merge queue (swarm-routing/.github#130); every workflow behind a required
 # check also runs on merge_group.
 merge_queue = true

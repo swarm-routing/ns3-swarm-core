@@ -6,9 +6,9 @@ name: API surface
 # its guard (tools/checks/check-api-surface.py; docs/api-policy.md "The API
 # record"): the record must match the sources, and a PR that removes or
 # changes a listed item must be marked breaking (`!` in its title or a
-# `BREAKING CHANGE:` footer). Report-only until the v1.0.0 freeze (#83): a
-# finding is a warning and the job stays green; the freeze PR turns on
-# --strict and proposes the check as required through settings-as-code.
+# `BREAKING CHANGE:` footer). Strict from the v1.0.0 freeze (#83): a finding
+# fails the job, and `api-surface` is a required check ([settings]
+# required_checks in .github/org-sync.toml).
 # The check name is `api-surface`; no `paths:` filter, so it can become a
 # required check without an edit.
 on:
@@ -70,4 +70,4 @@ jobs:
           printf '%s\n' "$BODY" > "$RUNNER_TEMP/pr-body.md"
           python3 -I tools/checks/check-api-surface.py check \
             --ns3-image ghcr.io/swarm-routing/ns3-dev:latest-debug \
-            --title "$TITLE" --body-file "$RUNNER_TEMP/pr-body.md" "${args[@]}"
+            --title "$TITLE" --body-file "$RUNNER_TEMP/pr-body.md" --strict "${args[@]}"

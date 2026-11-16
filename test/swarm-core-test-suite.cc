@@ -57,7 +57,8 @@ public:
 
 private:
     void DoRun() override {
-        NS_TEST_ASSERT_MSG_EQ(kSwarmCoreApiVersion, 2u, "API version");
+        // Frozen at v1.0.0 for all of 1.x (docs/api-policy.md): a change here is a major.
+        NS_TEST_ASSERT_MSG_EQ(kSwarmCoreApiVersion, 2u, "API version, frozen at v1.0.0");
         const double a = FirstDraw(7);
         NS_TEST_ASSERT_MSG_EQ(RngSeedManager::GetSeed(), 1u, "seed is always 1");
         NS_TEST_ASSERT_MSG_EQ(RngSeedManager::GetRun(), 7u, "the run is the seed");
