@@ -24,7 +24,7 @@ permissions:
 jobs:
   api-surface:
     name: api-surface
-    runs-on: ubuntu-24.04  # its clang++-18 parses the headers
+    runs-on: ubuntu-latest  # the clang comes from apt below, not the image (#173)
     timeout-minutes: 15
     steps:
       - name: Harden the runner (audit egress)
@@ -38,6 +38,21 @@ jobs:
           fetch-depth: 0  # the base commit's record
       - name: Self-test
         run: python3 -I tools/checks/check-api-surface.py --self-test
+      - name: Install the pinned clang
+        # generate/check need one clang version, so the record never changes
+        # with the runner image (#173); the version is the script's CLANG_VERSION.
+        timeout-minutes: 8
+        run: |
+          v=$(python3 -I tools/checks/check-api-surface.py --clang-version)
+          for i in 1 2 3; do
+            if sudo apt-get update --error-on=any \
+              && sudo apt-get install -y --no-install-recommends "clang-$v"; then
+              break
+            fi
+            [ "$i" = 3 ] && exit 1
+            sleep $((i * 15))
+          done
+          "clang++-$v" --version
       - name: Pull the ns-3 image
         timeout-minutes: 5
         run: docker pull --quiet ghcr.io/swarm-routing/ns3-dev:latest-debug

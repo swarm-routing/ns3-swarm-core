@@ -65,6 +65,7 @@ dist: ## the release asset in dist/: the swarm-core module tarball, checked
 	NS3_IMAGE=$(NS3_IMAGE) tools/release/dist.sh $(RELEASE_VERSION) dist
 
 # The record of the public API (docs/api-policy.md "The API record", #83):
-# regenerate it after an API change and commit it. Needs clang++-18 and docker.
+# regenerate it after an API change and commit it. Needs clang++-18
+# (apt-get install clang-18; the script's CLANG_VERSION) and docker.
 api-surface: ## regenerate docs/api-surface.txt from the headers and the TypeIds
 	python3 -I tools/checks/check-api-surface.py generate --ns3-image $(NS3_IMAGE)
