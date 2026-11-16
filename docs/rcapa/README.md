@@ -19,8 +19,10 @@ archived on Zenodo (concept DOI
 `swarm-core` vcpkg port in swarm-routing/vcpkg-registry, and the
 `ns3-swarm-core` image. Every protocol repository builds on a release through
 its lock (`swarm-core.lock`) or pin, so a regression here reaches them all.
-A defect caught on `main` before the next tag needs no RCAPA; whether a
-commit reached a release is read from `git tag --contains <commit>`.
+A defect introduced after the last tag and fixed before the next one never
+reached a release and needs no RCAPA; a defect in a released version needs
+one whenever it is found. Whether a commit reached a release is read from
+`git tag --contains <commit>`.
 
 | | |
 |---|---|
