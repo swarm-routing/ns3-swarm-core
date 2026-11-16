@@ -8,6 +8,20 @@ promise until a second protocol adopts them: `FuzzyMetric` (#3) and
 `IslLinkMonitor` with `SwarmRoutingBase`'s `IslHelloSuppression`, `OnLinkUp`,
 `BeaconSuppressed` and `IsLinkStateNeighbor` (#4, #160).
 
+## v1.0.0 (2026-11-16)
+
+### Feat
+
+- freeze the api at v1.0.0 (#159)
+- **base**: purge on use only, a protected ResolveNextHop and BroadcastControlOn (#168)
+- **release**: each release opens the vcpkg-registry port pr; readme gains the vcpkg route (#154)
+
+### Fix
+
+- **checks**: take an unversioned clang++ only when it is clang 17 or newer (#182)
+- **checks**: self-test under any clang, install the pinned clang for the api record (#180)
+- **base**: connect a WifiLinkMonitor aggregated after the node initialized (#171)
+
 ## v0.4.0 (2026-11-15)
 
 ### Feat
