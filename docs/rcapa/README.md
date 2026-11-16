@@ -10,34 +10,41 @@ swarm-routing/ns3-tools. The org's rule and its decision table are in
 ([ADR-0003](https://github.com/swarm-routing/.github/blob/main/docs/adr/0003-rcapa-for-ns3-bugs-and-released-regressions.md)).
 This page is the project's flow and its index.
 
-<!-- Seeded by org-sync from swarm-routing/.github templates/rcapa/README.md;
-the repository's own from here. Replace every TODO with this project's facts
-(its AGENTS.md, release.yml and docs), then delete this comment. -->
-
 ## The flow for this project
+
+A **published release** of swarm-core is a `v*` tag of this repository:
+its GitHub release with the `swarm-core-<ver>.tar.gz` asset (`tools/release/dist.sh`),
+archived on Zenodo (concept DOI
+[10.5281/zenodo.24138628](https://doi.org/10.5281/zenodo.24138628)), the
+`swarm-core` vcpkg port in swarm-routing/vcpkg-registry, and the
+`ns3-swarm-core` image. Every protocol repository builds on a release through
+its lock (`swarm-core.lock`) or pin, so a regression here reaches them all.
+A defect caught on `main` before the next tag needs no RCAPA; whether a
+commit reached a release is read from `git tag --contains <commit>`.
 
 | | |
 |---|---|
-| Published as | TODO: the release channels this project ships (GitHub release + Zenodo DOI, PyPI, a vcpkg port, images, a site deploy, a dataset release, a plugin version), or "nothing yet: the flow starts at the first release" |
-| ID prefix | TODO: `<PREFIX>-NNN` (CONTRIBUTING "RCAPA", the prefix table) |
-| Ticket | an issue in swarm-routing/ns3-swarm-core, form *Regression in a release (RCAPA)*, title `[rcapa] <PREFIX>-NNN <short description>`, labels `rcapa` and `bug` |
-| Verified by | TODO: the check, gate or reproducer that shows the regression and its fix |
-| Corrective action | TODO: the fix and its test, and how a fixed release is cut |
-| Preventive action | TODO: the check that would have caught it before the release |
-| Closes when | the fix is merged **and** a release of the channel above carries it |
+| Published as | `v*` tags: GitHub release (`swarm-core-<ver>.tar.gz`) + Zenodo DOI, the `swarm-core` vcpkg port, the `ns3-swarm-core` image; consumed by AntHocNet, ARA, BeeAdHoc, Termite and HOPNET through their locks and pins |
+| ID prefix | `SWC-NNN` |
+| Ticket | an issue in swarm-routing/ns3-swarm-core, form *Regression in a release (RCAPA)*, title `[rcapa] SWC-NNN <short description>`, labels `rcapa` and `bug` |
+| Verified by | the reproducer against the failing tag and the last good one: the `core` check (`core.yml`: ctest at C++23, ASan + UBSan, `tools/checks/check-core-consumer.sh`), `test.py -s swarm-core` in `ci.yml` (debug, sanitized), the determinism gate (`swarm-core-seed`), `api-surface.yml` for an API change; the consumer that broke (its run linked) |
+| Corrective action | the fix PR with a test in `core/test/` or `test/` that fails without it (golden rule 13); a breaking API fix follows `docs/api-policy.md`; then a release bump, the vcpkg port bump and the consumers' lock bumps org-bot opens |
+| Preventive action | the primitive test, glue test or consumer check that would have caught it before the tag; a consumer canary (`canary-dependencies`) case if only a consumer showed it |
+| Closes when | the fix is merged **and** a `v*` release carries it (tag and version DOI read from Zenodo), and the consumers that broke run green on it |
 
 ```mermaid
 sequenceDiagram
-    participant U as Reporter
+    participant C as Consumer repository
     participant T as RCAPA ticket
-    participant D as This page
+    participant G as core and ci checks
     participant M as main
-    participant R as Release
-    U->>T: regression found against a release
-    T->>D: RCAPA document and index row
-    T->>M: fix and test, merged
-    M->>R: release that carries the fix
-    R->>T: tag and DOI recorded, ticket closed
+    participant R as Release, port and locks
+    C->>T: a released swarm-core breaks a consumer
+    T->>G: reproduce against the failing and last good tag
+    T->>M: fix with a primitive or glue test
+    M->>R: release bump, vcpkg port and lock bump PRs
+    R->>C: consumer CI green on the new release
+    C->>T: tag, DOI and consumer runs recorded, ticket closed
 ```
 
 ## Index
