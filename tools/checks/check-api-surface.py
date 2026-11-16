@@ -161,7 +161,17 @@ def newest_clang() -> str | None:
     if found:
         return found[max(found)]
     plain = shutil.which("clang++")
-    return os.path.abspath(plain) if plain else None
+    if not plain:
+        return None
+    # an unversioned clang++ (often a link to some clang++-N) only if it is new enough
+    try:
+        out = subprocess.run(
+            [plain, "--version"], capture_output=True, text=True, timeout=30
+        ).stdout
+    except (OSError, subprocess.SubprocessError):
+        return None
+    m = re.search(r"clang version (\d+)", out)
+    return os.path.abspath(plain) if m and int(m.group(1)) >= MIN_FALLBACK_CLANG else None
 
 
 def clang_binary(pinned: bool = True) -> str:
@@ -962,7 +972,7 @@ def clang_choice(bindir: Path) -> None:
             assert f"clang++-{CLANG_VERSION} not found" in str(e), e
             assert f"apt-get install clang-{CLANG_VERSION}" in str(e), e
         for n in ("clang++-14", f"clang++-{CLANG_VERSION + 4}", "clang++-x", "clang++"):
-            (bindir / n).write_text("#!/bin/sh\n")
+            (bindir / n).write_text("#!/bin/sh\necho 'Ubuntu clang version 19.1.7'\n")
             (bindir / n).chmod(0o755)
         newest = os.path.abspath(bindir / f"clang++-{CLANG_VERSION + 4}")
         assert clang_binary(pinned=False) == newest, "unpinned: the newest clang++-N"
@@ -976,8 +986,14 @@ def clang_choice(bindir: Path) -> None:
             os.environ["PATH"] = str(bindir)
         (bindir / f"clang++-{CLANG_VERSION + 4}").unlink()
         assert clang_binary(pinned=False) == os.path.abspath(bindir / "clang++"), (
-            "clang++-14 predates -std=c++23: the plain clang++ instead"
+            "clang++-14 predates -std=c++23: the plain clang++ (19) instead"
         )
+        (bindir / "clang++").write_text("#!/bin/sh\necho 'clang version 14.0.0'\n")
+        try:
+            clang_binary(pinned=False)
+            raise AssertionError("a plain clang++ older than 17 is no fallback")
+        except SurfaceError:
+            pass
         try:
             clang_binary()
             raise AssertionError("pinned: a newer clang is not the pinned one")
