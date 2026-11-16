@@ -509,6 +509,11 @@ because the issue threads were thorough. Caveman the chat, not the record.
   link, read from its record (`lit-search` confirms it), or, for a work with
   no DOI, by its publisher's or institution's page; never point into or name
   the private paper library there.
+- An ns-3 bug, or an investigation of one, always gets an RCAPA ticket in
+  swarm-routing/ns3-tools first (form *ns-3 bug (RCAPA)*, label `rcapa`, ID
+  `NS3-NNN`); its doc in `docs/ns3-rcapa/` and its `docs/ns3-bugs.md` row
+  follow, and every workaround links the ID. Upstream reports are filed by
+  the maintainer, never by an agent (CONTRIBUTING "ns-3 bugs (RCAPA)").
 <!-- org-sync:end agent-defaults -->
 
 ## Where to look
