@@ -170,7 +170,8 @@ The public API (`docs/api-policy.md` "What the API is") is recorded in
 registrations; a PR that adds to the API commits the regenerated file, and
 one that removes or changes a line must be a breaking change (`!` in its
 title or a `BREAKING CHANGE:` footer). The `api-surface` workflow checks both,
-report-only until the v1.0.0 freeze (#83). Needs `clang++-18` (the script's `CLANG_VERSION`; `apt-get install clang-18`) and docker; the self-test runs
+report-only until the v1.0.0 freeze (#83). Needs `clang++-18` (the script's
+`CLANG_VERSION`; `apt-get install clang-18`) and docker; the self-test runs
 under any clang:
 
 ```bash
