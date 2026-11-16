@@ -456,7 +456,11 @@ because the issue threads were thorough. Caveman the chat, not the record.
   full, `swarm-routing/<repo>#N`, also inside a list or a range. A bare `#N`
   links to the repository the text is in: in
   `swarm-routing/AntHocNet#65, #151` the second number points at this
-  repository's #151 (swarm-routing/.github#277).
+  repository's #151 (swarm-routing/.github#277). An ns-3 item on GitHub is
+  its full GitLab URL (or a link whose text is `nsnam/ns-3-dev#N`); in
+  anything bound for ns-3's GitLab, an item of ours is its full GitHub URL,
+  never `swarm-routing/<repo>#N` or a bare `#N` / `!N` (CONTRIBUTING "ns-3
+  bugs (RCAPA)").
 - A sentence in `ROADMAP.md` or an AGENTS.md that calls an issue done is not
   evidence: read the issue's acceptance criteria. On 2026-11-12 nine issues
   described as done had open criteria (swarm-routing/.github#274).
