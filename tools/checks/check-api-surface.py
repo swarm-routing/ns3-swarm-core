@@ -143,17 +143,25 @@ def core_headers(repo: Path) -> list[str]:
 # --- clang's JSON AST, streamed -------------------------------------------------
 
 
+# The oldest clang the self-test falls back to: the first that accepts -std=c++23.
+MIN_FALLBACK_CLANG = 17
+
+
 def newest_clang() -> str | None:
-    """The newest `clang++-N` on PATH, else `clang++`, else None."""
+    """The newest `clang++-N` (N >= MIN_FALLBACK_CLANG) on PATH, else `clang++`, else
+    None; an absolute path, since clang runs with another working directory."""
     found: dict[int, str] = {}
     for d in os.environ.get("PATH", "").split(os.pathsep):
         if not d or not Path(d).is_dir():
             continue
         for p in Path(d).glob("clang++-*"):
             m = re.fullmatch(r"clang\+\+-(\d+)", p.name)
-            if m and os.access(p, os.X_OK):
-                found.setdefault(int(m.group(1)), str(p))
-    return found[max(found)] if found else shutil.which("clang++")
+            if m and int(m.group(1)) >= MIN_FALLBACK_CLANG and os.access(p, os.X_OK):
+                found.setdefault(int(m.group(1)), os.path.abspath(p))
+    if found:
+        return found[max(found)]
+    plain = shutil.which("clang++")
+    return os.path.abspath(plain) if plain else None
 
 
 def clang_binary(pinned: bool = True) -> str:
@@ -953,11 +961,23 @@ def clang_choice(bindir: Path) -> None:
         except SurfaceError as e:
             assert f"clang++-{CLANG_VERSION} not found" in str(e), e
             assert f"apt-get install clang-{CLANG_VERSION}" in str(e), e
-        for n in ("clang++-9", f"clang++-{CLANG_VERSION + 4}", "clang++-x", "clang++"):
+        for n in ("clang++-14", f"clang++-{CLANG_VERSION + 4}", "clang++-x", "clang++"):
             (bindir / n).write_text("#!/bin/sh\n")
             (bindir / n).chmod(0o755)
-        newest = str(bindir / f"clang++-{CLANG_VERSION + 4}")
+        newest = os.path.abspath(bindir / f"clang++-{CLANG_VERSION + 4}")
         assert clang_binary(pinned=False) == newest, "unpinned: the newest clang++-N"
+        cwd = os.getcwd()
+        try:  # a relative PATH entry still gives an absolute path (clang runs elsewhere)
+            os.chdir(bindir.parent)
+            os.environ["PATH"] = bindir.name
+            assert clang_binary(pinned=False) == newest, "absolute from a relative PATH"
+        finally:
+            os.chdir(cwd)
+            os.environ["PATH"] = str(bindir)
+        (bindir / f"clang++-{CLANG_VERSION + 4}").unlink()
+        assert clang_binary(pinned=False) == os.path.abspath(bindir / "clang++"), (
+            "clang++-14 predates -std=c++23: the plain clang++ instead"
+        )
         try:
             clang_binary()
             raise AssertionError("pinned: a newer clang is not the pinned one")
