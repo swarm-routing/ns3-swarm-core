@@ -24,15 +24,19 @@ on:
   workflow_dispatch:
     inputs:
       mode:
-        description: "dry-run: bump, build, attest and verify on the runner only; bump: open the bump PR (merging it releases)"
+        description: "dry-run: bump, build, attest and verify on the runner only; bump: open the bump PR (merging it releases); release-notes: re-render the notes of the release `tag` from CHANGELOG.md"
         type: choice
-        options: [dry-run, bump]
+        options: [dry-run, bump, release-notes]
         default: dry-run
       increment:
         description: "auto: the bump Commitizen reads from the commits; PATCH, MINOR or MAJOR force it (MAJOR releases 1.0.0, docs/api-policy.md \"Freezing\")"
         type: choice
         options: [auto, PATCH, MINOR, MAJOR]
         default: auto
+      tag:
+        description: "release-notes only: the existing release whose notes are re-rendered, vX.Y.Z (swarm-routing/.github#524)"
+        type: string
+        default: ''
   push:
     branches: [main]   # the merged bump PR releases; any other push is a no-op
 permissions:
@@ -51,6 +55,7 @@ jobs:
     with:
       mode: ${{ inputs.mode }}   # empty on push: release
       increment: ${{ inputs.increment != 'auto' && inputs.increment || '' }}  # '' on push and for auto (swarm-routing/.github#211)
+      tag: ${{ inputs.tag }}   # release-notes only; '' on push (swarm-routing/.github#524)
       vcpkg-ports: swarm-core   # after publish, the org bot opens the port bump PR in swarm-routing/vcpkg-registry (#135)
       # a dry run builds the protocols and AntHocNet against this commit,
       # report-only (.github/downstream.txt, swarm-routing/.github#482)
