@@ -106,7 +106,11 @@ behaviour changes; security is a default-off profile (AntHocNet ADR-0020).
 
 2. **The ids are every 32-bit value except `kInvalidAddress` (-1, all bits
    set), which is never a node's id on any host. A host whose rule maps ids
-   to IPv4 addresses (ns-3, the daemon) also never assigns 0.** "Invalid" is
+   to IPv4 addresses (ns-3, the daemon) also never assigns 0. The daemon
+   also never assigns the subnet-broadcast address of an overlay IPv4 prefix
+   (all host bits set, such as 10.1.0.255 in 10.1.0.0/24) and rejects a
+   configured address of that kind, because ADR-0003 drops overlay packets
+   sent to a broadcast address.** "Invalid" is
    then outside the id space by definition, which is what the issue's title
    asks for.
    *Reason:* -1 is already the sentinel in every core and on every wire

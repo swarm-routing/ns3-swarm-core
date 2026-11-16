@@ -269,6 +269,13 @@ uses the code. The differences:
     ADR-0010), the exclusion of the previous hop, the holds while a route
     reconverges, the failed packet on a send failure, and the daemon's count
     of forwarded packets.
+    Every node of a network runs the same mode, as for the MTU (decision
+    7): a packet the kernel forwards carries no frame, so a baseline node on
+    its path could not relay it. Kernel mode needs the kernel's own
+    forwarding switched on, which the baseline never touches (decision 12);
+    which setting, and how it is restored when the daemon stops or is
+    killed, is decided when the mode is built, with the routing-protocol
+    number (question 5).
     It is not built before F2's result is recorded on
     swarm-routing/.github#269, and not at all if F2 fails its threshold.
     *Reason:* the only kernel mode worth building is the one whose cost has
@@ -393,8 +400,12 @@ much is F2's number.
   decodes with the core's codec and equals, field by field, the message in
   ns-3's capture of the same scene. For data: the data header of a frame
   decodes with the core's codec and equals the header ns-3 carries for the
-  same hop. swarm-routing/.github#256's text ("UDP (broadcast and unicast)") becomes "multicast
-  and unicast".
+  same hop. The one exception is ARA's 2002 version, whose data flag stays
+  an ns-3 tag with no header bytes (question 4): ns-3 carries no header to
+  compare with, so that version has no data-byte check, and what replaces
+  it is decided with swarm-routing/ARA#189.
+  swarm-routing/.github#256's text ("UDP (broadcast and unicast)") becomes
+  "multicast and unicast".
 - **Issues filed on acceptance** (acceptance criterion 4 of the issue;
   2026-11-16): swarm-routing/AntHocNet#1085 and swarm-routing/ARA#189. The
   other items are notes for each protocol's driver, written when the driver
