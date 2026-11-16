@@ -369,14 +369,14 @@ protocol then does; none of it changes a protocol's rules.
 
 The scenes are swarm-routing/.github#268's; the rung is 4 (the daemon in
 network namespaces). "Must pass" means the checker prints PASS with this data
-plane; "expected failure" keeps #268's meaning (it turns into an error the
+plane; "expected failure" keeps swarm-routing/.github#268's meaning (it turns into an error the
 day it passes); "cannot" is a limit of the data plane or of the rung.
 
 | Protocol | Must pass | Expected failure, and what ends it | Cannot, and why |
 |---|---|---|---|
 | AntHocNet | RT-1 to RT-9. RT-3, RT-5 and RT-6 on its hello timeout alone (swarm-routing/.github#256's criterion); a cold `ping` loses nothing, since the first packet is held | none | nothing |
-| ARA | RT-1, RT-2, RT-4, RT-7, once its data header exists (decision 14). A cold `ping` loses its first packets by design (no buffering) | RT-3, RT-5, RT-6, RT-8: #268 names swarm-routing/ARA#5; the handling is now in the core, and what is missing off ns-3 is the failure signal (decision 8; the beacon decision of swarm-routing/ns3-swarm-core#73) | nothing |
-| BeeAdHoc | RT-1, RT-2, RT-4, RT-7: #268's condition "once the source route is on the wire" is met on `main` | RT-3, RT-5, RT-6, RT-8: the failure signal, as ARA | the battery levels of a route are all 7 without a gauge, so no scene on this rung exercises the energy rating |
+| ARA | RT-1, RT-2, RT-4, RT-7, once its data header exists (decision 14). A cold `ping` loses its first packets by design (no buffering) | RT-3, RT-5, RT-6, RT-8: swarm-routing/.github#268 names swarm-routing/ARA#5; the handling is now in the core, and what is missing off ns-3 is the failure signal (decision 8; the beacon decision of swarm-routing/ns3-swarm-core#73) | nothing |
+| BeeAdHoc | RT-1, RT-2, RT-4, RT-7: swarm-routing/.github#268's condition "once the source route is on the wire" is met on `main` | RT-3, RT-5, RT-6, RT-8: the failure signal, as ARA | the battery levels of a route are all 7 without a gauge, so no scene on this rung exercises the energy rating |
 | Termite | none today | every scene: "a fresh network delivers nothing until a node can learn a destination it has not heard from" (swarm-routing/Termite#6; Termite AGENTS.md says the same on `main`). When it lands: RT-1, RT-2, RT-4 and RT-7 must pass without overhearing | overhearing, on this rung: each link is its own pair of virtual devices, so a third node hears nothing. It can first be exercised on rung 5 or 6 |
 | HOPNET | RT-1, RT-2, RT-4, RT-7, once it has a driver and passes them on rung 2 | RT-3, RT-5, RT-6, RT-8, until rung 2 shows them passing: nothing has run HOPNET on a repair scene, and its ns-3 numbers do not count (HOPNET `docs/anchor-verdict.md`) | nothing known |
 
@@ -393,7 +393,7 @@ much is F2's number.
   decodes with the core's codec and equals, field by field, the message in
   ns-3's capture of the same scene. For data: the data header of a frame
   decodes with the core's codec and equals the header ns-3 carries for the
-  same hop. #256's text ("UDP (broadcast and unicast)") becomes "multicast
+  same hop. swarm-routing/.github#256's text ("UDP (broadcast and unicast)") becomes "multicast
   and unicast".
 - **Issues filed on acceptance** (acceptance criterion 4 of the issue;
   2026-11-16): swarm-routing/AntHocNet#1085 and swarm-routing/ARA#189. The
@@ -437,7 +437,7 @@ much is F2's number.
 
 ## Alternatives considered
 
-- **rtnetlink alone** (the plan of swarm-routing/AntHocNet#65 and #152).
+- **rtnetlink alone** (the plan of swarm-routing/AntHocNet#65 and swarm-routing/AntHocNet#152).
   Rejected as the baseline: the kernel answers "unreachable" before the
   daemon sees a packet, picks among several next hops per flow, and cannot
   add a data header. It survives as decision 11.
