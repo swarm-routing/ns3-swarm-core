@@ -8,7 +8,7 @@
 | Release | [![Release](https://img.shields.io/github/v/release/swarm-routing/ns3-swarm-core?sort=semver&cacheSeconds=1800)](https://github.com/swarm-routing/ns3-swarm-core/releases) [![DOI](https://zenodo.org/badge/DOI/10.5281/zenodo.24138628.svg)](https://doi.org/10.5281/zenodo.24138628) [![Cite](https://img.shields.io/badge/cite-CITATION.cff-blue)](CITATION.cff) [![vcpkg: swarm-core](https://img.shields.io/badge/dynamic/json?url=https%3A%2F%2Fraw.githubusercontent.com%2Fswarm-routing%2Fvcpkg-registry%2Fmain%2Fports%2Fswarm-core%2Fvcpkg.json&query=%24%5B%22version-semver%22%5D&label=vcpkg%20swarm-core)](https://github.com/swarm-routing/vcpkg-registry/tree/main/ports/swarm-core) [![Licence: GPL-2.0-only, core/ tools/ MIT OR GPL-2.0-only](https://img.shields.io/badge/licence-GPL--2.0--only%2C%20core%2F%20tools%2F%20MIT%20OR%20GPL--2.0--only-blue)](LICENSING.md) |
 | Trust | [![OpenSSF Scorecard](https://api.securityscorecards.dev/projects/github.com/swarm-routing/ns3-swarm-core/badge)](https://scorecard.dev/viewer/?uri=github.com/swarm-routing/ns3-swarm-core) |
 | Stack | [![C++23](https://img.shields.io/badge/C%2B%2B-23-blue?logo=cplusplus)](AGENTS.md) [![Runs on ns-3](https://img.shields.io/badge/runs%20on-ns--3-informational)](https://www.nsnam.org) |
-| Community & docs | [![Colony Arena: ns3-swarm-core](https://img.shields.io/badge/Colony%20Arena-project%20page-orange)](https://swarm-routing.github.io/projects/ns3-swarm-core/) [![Conventional Commits](https://img.shields.io/badge/Conventional%20Commits-1.0.0-yellow)](https://www.conventionalcommits.org) |
+| Community & docs | [![Colony Arena: ns3-swarm-core](https://img.shields.io/badge/Colony%20Arena-project%20page-orange)](https://swarm-routing.github.io/projects/ns3-swarm-core/) [![Open RCAPA](https://img.shields.io/github/issues/swarm-routing/ns3-swarm-core/rcapa?label=open%20RCAPA&color=blue)](https://github.com/swarm-routing/ns3-swarm-core/blob/main/docs/rcapa/README.md) [![Conventional Commits](https://img.shields.io/badge/Conventional%20Commits-1.0.0-yellow)](https://www.conventionalcommits.org) |
 <!-- org-sync:end badges -->
 
 The shared ns-3 contrib module `swarm-core` that every swarm-routing protocol
@@ -252,6 +252,9 @@ the tools to install, how to get the code and its dependencies, how to
 build, test, run and lint it, the Docker images, what CI checks and how to
 read a red run. How changes are proposed, reviewed and released is the org's
 [CONTRIBUTING.md](https://github.com/swarm-routing/.github/blob/main/CONTRIBUTING.md).
+A regression in a released version gets an RCAPA (root cause analysis with
+corrective and preventive actions): [docs/rcapa/README.md](docs/rcapa/README.md)
+is this project's flow and its index.
 <!-- org-sync:end develop -->
 
 ## Epics
