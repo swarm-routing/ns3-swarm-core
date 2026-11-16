@@ -19,6 +19,7 @@
 #include "ns3/inet-socket-address.h"
 #include "ns3/internet-stack-helper.h"
 #include "ns3/ipv4-address-helper.h"
+#include "ns3/ipv4-l3-protocol.h"
 #include "ns3/ipv4.h"
 #include "ns3/mobility-helper.h"
 #include "ns3/mobility-model.h"
@@ -108,6 +109,10 @@ public:
     /// A relay that holds every transit packet through Defer with a mark on
     /// it, as an adapter overriding RouteInput would (#40).
     bool holdMarked = false;
+    /// A relay that forwards every transit packet it has a route for at the
+    /// IP layer, control packets included, as AntHocNet's RouteInput does
+    /// with its ants (#192); the base's own RouteInput forwards no control.
+    bool relayAll = false;
     /// OnTxFailure (#128): one line per call ("tx data <dst>", "tx control",
     /// "tx other"), then the base's default unless `txOnly`; the default's
     /// OnLinkFailure and OnDataUndelivered add "link" and "undelivered".
@@ -248,6 +253,10 @@ protected:
             Ptr<Packet> q = p->Copy();
             q->AddPacketTag(MarkTag());
             Defer(q, header, ucb, ecb);
+            return true;
+        }
+        if (relayAll && !IsMyAddress(dst) && routes.count(dst) > 0) {
+            ForwardData(p, header, routes[dst], ucb);
             return true;
         }
         return SwarmRoutingBase::RouteInput(p, header, idev, ucb, mcb, lcb, ecb);
@@ -1463,6 +1472,72 @@ private:
         NS_TEST_ASSERT_MSG_EQ(Toy(n2)->markedFrom.size(), 1u, "n2 saw the data packet");
         NS_TEST_EXPECT_MSG_EQ(Toy(n2)->markedFrom[0], true,
                               "what the adapter put on the packet was released with it");
+        Simulator::Destroy();
+    }
+};
+
+/// Control packets go one hop (#192): the base's control sockets send with
+/// TTL 1, so a unicast control packet to a node two hops away dies at the
+/// relay as TTL-exceeded even when the relay forwards it, while one to a
+/// neighbour arrives; the same packet from a socket of the protocol's own at
+/// the default TTL is relayed (swarm-routing/AntHocNet#1083's remedy).
+class ControlTtlTestCase : public TestCase {
+public:
+    ControlTtlTestCase()
+        : TestCase("glue: control sockets send with TTL 1; a two-hop unicast control "
+                   "packet dies at the relay") {}
+
+private:
+    void DoRun() override {
+        SwarmCoreSeed(1);
+        Line line("10Mbps");
+        Ptr<Node> n0 = line.nodes.Get(0);
+        Ptr<Node> n1 = line.nodes.Get(1);
+        Ptr<Node> n2 = line.nodes.Get(2);
+        const Ipv4Address n1a = Addr(n1, 1);
+        const Ipv4Address n2a = Addr(n2, 1);
+        Toy(n0)->routes[n2a] = n1a;  // for the own socket's RouteOutput
+        Toy(n1)->routes[n2a] = n2a;
+        Toy(n1)->relayAll = true;  // the relay would forward a control packet
+
+        std::vector<uint8_t> ttls;  // n0's outgoing UDP packets, in order
+        n0->GetObject<Ipv4L3Protocol>()->TraceConnectWithoutContext(
+            "Tx", MakeBoundCallback(
+                      +[](std::vector<uint8_t>* out, Ptr<const Packet> p, Ptr<Ipv4>, uint32_t) {
+                          Ipv4Header h;
+                          if (p->PeekHeader(h) && h.GetProtocol() == 17) {
+                              out->push_back(h.GetTtl());
+                          }
+                      },
+                      &ttls));
+        uint32_t ttlExpired = 0;
+        n1->GetObject<Ipv4L3Protocol>()->TraceConnectWithoutContext(
+            "Drop",
+            MakeBoundCallback(
+                +[](uint32_t* n, const Ipv4Header&, Ptr<const Packet>, Ipv4L3Protocol::DropReason r,
+                    Ptr<Ipv4>, uint32_t) { *n += r == Ipv4L3Protocol::DROP_TTL_EXPIRED ? 1 : 0; },
+                &ttlExpired));
+
+        Ptr<Socket> own = Source(n0);  // a protocol's own socket, default TTL
+        Simulator::Schedule(Seconds(1.0), [&]() { Toy(n0)->UnicastMessage(n1a, 7); });
+        Simulator::Schedule(Seconds(1.5), [&]() { Toy(n0)->UnicastMessage(n2a, 9); });
+        Simulator::Schedule(Seconds(2.0), [&]() {
+            own->SendTo(Create<Packet>(11), 0, InetSocketAddress(n2a, 4242));
+        });
+        Simulator::Stop(Seconds(3));
+        Simulator::Run();
+
+        NS_TEST_ASSERT_MSG_EQ(ttls.size(), 3u, "n0 sent three UDP packets");
+        NS_TEST_EXPECT_MSG_EQ(uint32_t(ttls[0]), 1u, "one-hop unicast control: TTL 1");
+        NS_TEST_EXPECT_MSG_EQ(uint32_t(ttls[1]), 1u, "two-hop unicast control: TTL 1");
+        NS_TEST_EXPECT_MSG_EQ(uint32_t(ttls[2]), 64u, "own socket: ns-3's default TTL");
+        NS_TEST_ASSERT_MSG_EQ(Toy(n1)->controlLog.size(), 1u, "the neighbour got one");
+        NS_TEST_EXPECT_MSG_NE(Toy(n1)->controlLog[0].find("10.1.1.1->10.1.1.2 7"),
+                              std::string::npos, "the one-hop unicast arrived");
+        NS_TEST_EXPECT_MSG_EQ(ttlExpired, 1u, "the relay dropped the two-hop one: TTL");
+        NS_TEST_ASSERT_MSG_EQ(Toy(n2)->controlLog.size(), 1u, "n2 got the relayed one only");
+        NS_TEST_EXPECT_MSG_NE(Toy(n2)->controlLog[0].find("10.1.1.1->10.1.2.2 11"),
+                              std::string::npos, "the own socket's packet was relayed");
         Simulator::Destroy();
     }
 };
@@ -2743,6 +2818,7 @@ std::vector<TestCase*> MakeGlueTestCases() {
             new WireBufferTestCase,
             new RoutingBaseTestCase,
             new DeferFromAdapterTestCase,
+            new ControlTtlTestCase,
             new IslMonitorTestCase,
             new IslHelloSuppressionTestCase,
             new IslHelloHybridTestCase,

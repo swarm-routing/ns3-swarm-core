@@ -11,6 +11,8 @@
 //   (LinkState(), LinkQuality(), Neighbors(), Energy(); null ports otherwise);
 // - one UDP control socket per interface (unicast + subnet broadcast) on the
 //   protocol's port, so harnesses count control traffic as for every protocol;
+//   they send with IP TTL 1 (control traffic goes one hop: see "Control
+//   packets go one hop" at the services below);
 // - the deferred route: a data packet with no next hop is bounced through
 //   loopback, held in a DeferredPacketQueue with its forwarding callbacks, and
 //   released when the protocol learns a route (or dropped through its error
@@ -286,6 +288,21 @@ protected:
     // --- services
     // ----------------------------------------------------------------
 
+    // Control packets go one hop (#192). Every control socket the base opens
+    // (NotifyInterfaceUp) sends with IP TTL 1, so BroadcastControl,
+    // BroadcastControlOn, BroadcastBeacon and UnicastControl reach one-hop
+    // neighbours only. A unicast control packet whose route goes through a
+    // gateway, because its destination is not on the link (a stale next hop,
+    // or an adapter's RouteOutput that routes it), is not relayed: the
+    // gateway drops it, as TTL-exceeded (with an ICMP error back) when its
+    // RouteInput forwards it at the IP layer, and the base's own RouteInput
+    // forwards no transit control packet at all. A protocol that needs a control
+    // packet relayed at the IP layer sends it on a socket of its own at the
+    // default TTL, as swarm-routing/AntHocNet#1083 does for its unicast ants
+    // (one socket per interface, bound to the device, receiving nothing: the
+    // base's sockets still receive). Documented behaviour of v1.0.0
+    // (docs/api-policy.md).
+
     /// One-hop broadcast of a control message on every interface. Nothing
     /// is sent while the node is down; neither is a unicast.
     void BroadcastControl(Ptr<Packet> p);
@@ -315,7 +332,9 @@ protected:
     /// False, and nothing sent, when the node is down or holds no control
     /// socket on that interface.
     bool BroadcastControlOn(Ptr<Packet> p, uint32_t interface);
-    /// One-hop unicast of a control message to a neighbour.
+    /// One-hop unicast of a control message to a neighbour, at IP TTL 1 (see
+    /// "Control packets go one hop" above): it is not relayed beyond the
+    /// next hop it resolves to.
     void UnicastControl(Ptr<Packet> p, Ipv4Address neighbor);
     /// Forwards a data packet to `next` (stamps SwarmPrevHopTag).
     void ForwardData(Ptr<const Packet> p, const Ipv4Header& header, Ipv4Address next,
