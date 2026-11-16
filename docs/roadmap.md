@@ -222,6 +222,7 @@ additive minor release.
 Every published release with its Zenodo version DOI, read from Zenodo by swarm-routing/.github `tools/zenodo/zenodo.py shipped` (org-bot's `release-aftercare` task); never edit the block by hand.
 
 <!-- releases:shipped:begin (zenodo.py shipped --write; never edit by hand) -->
+- **v1.0.0** shipped 2026-11-16 ([release](https://github.com/swarm-routing/ns3-swarm-core/releases/tag/v1.0.0), Zenodo version DOI [10.5281/zenodo.24268942](https://doi.org/10.5281/zenodo.24268942))
 - **v0.4.0** shipped 2026-11-15 ([release](https://github.com/swarm-routing/ns3-swarm-core/releases/tag/v0.4.0), Zenodo version DOI [10.5281/zenodo.24238876](https://doi.org/10.5281/zenodo.24238876))
 - **v0.3.0** shipped 2026-11-14 ([release](https://github.com/swarm-routing/ns3-swarm-core/releases/tag/v0.3.0), Zenodo version DOI [10.5281/zenodo.24221311](https://doi.org/10.5281/zenodo.24221311))
 - **v0.2.0** shipped 2026-11-13 ([release](https://github.com/swarm-routing/ns3-swarm-core/releases/tag/v0.2.0), Zenodo version DOI [10.5281/zenodo.24184704](https://doi.org/10.5281/zenodo.24184704))
