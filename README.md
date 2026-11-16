@@ -264,7 +264,7 @@ What is planned and in progress here: the issues labelled [`epic`](https://githu
 | Epic | Status | Sub-issues closed |
 |------|--------|-------------------|
 | [#177](https://github.com/swarm-routing/ns3-swarm-core/issues/177) developer experience: a newcomer can build, test and contribute from the docs alone | In progress | 1 / 2 |
-| [#82](https://github.com/swarm-routing/ns3-swarm-core/issues/82) swarm-core 2.0.0: the host contract, so a protocol core runs on any host | Planned | 0 / 4 |
+| [#82](https://github.com/swarm-routing/ns3-swarm-core/issues/82) swarm-core 2.0.0: the host contract, so a protocol core runs on any host | Planned | 0 / 5 |
 
 <details><summary>Closed: 1 epic</summary>
 
