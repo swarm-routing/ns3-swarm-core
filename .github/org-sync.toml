@@ -1,5 +1,7 @@
 # org-sync configuration (swarm-routing/.github tools/org-sync).
 kind = "protocol"
+# bestpractices.dev project (OpenSSF Best Practices badge; id read from the site's public JSON, swarm-routing/.github#531)
+bestpractices_project = "16816"
 # its port in swarm-routing/vcpkg-registry: the README's vcpkg badge (swarm-routing/.github#436)
 vcpkg_ports = ["swarm-core"]
 # CITATION.cff seed and cite badge. Once Zenodo archives a release: set zenodo_concept = "<record id>"
