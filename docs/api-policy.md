@@ -29,6 +29,23 @@ swarm-core's sources:
 | The module itself | The contrib module name `swarm-core`, the umbrella header `ns3/swarm-core-module.h`, `SwarmCoreSeed` and `kSwarmCoreApiVersion` (below). |
 | Default output | With every new option at its default, the same seed gives the same bytes (org invariant 5): a consumer's `##RUN##` lines do not move because swarm-core was updated, except by a bug fix, which follows the Patch rule below. |
 
+The comments in `model/swarm-routing-base.h` are the base's contract, as the
+`core/` headers' comments are the primitives'. One rule there is easy to miss,
+because the CI smokes are too short to show it (#192): **control packets go
+one hop.** Every control socket the base opens sends with IP TTL 1
+(`NotifyInterfaceUp`), so `BroadcastControl`, `BroadcastControlOn`,
+`BroadcastBeacon` and `UnicastControl` reach one-hop neighbours only. A unicast
+control packet routed through a gateway is not relayed: the gateway drops it as
+TTL-exceeded if its routing forwards it, and the base's own `RouteInput`
+forwards no transit control packet. A protocol that needs a control packet
+relayed at the IP layer sends it on a socket of its own at the default TTL, as
+swarm-routing/AntHocNet#1083 does for its unicast ants. This is documented
+behaviour of v1.0.0, pinned by the glue test "control sockets send with TTL 1":
+raising the TTL would change consumers' default output, so it is a breaking
+change; a routed control send beside it would be a minor, added only once a
+second protocol needs one (golden rule 11; maintainer decision 2026-11-16 on
+#192).
+
 Not API, and free to change in any release: namespace
 `swarm::core::test`, `core/test/`, `core/bench/`, private members, log output
 (`NS_LOG`), the file layout beyond the headers listed above, `tools/`, CI
