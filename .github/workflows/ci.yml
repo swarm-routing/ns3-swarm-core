@@ -49,7 +49,7 @@ jobs:
         id: changes
         timeout-minutes: 2
         with:
-          paths: '\.md$|^docs/references\.bib$|^\.github/ISSUE_TEMPLATE/|^\.github/(CODEOWNERS|FUNDING\.yml|pull_request_template\.md)$|^LICENSE[^/]*$|^CITATION\.cff$|^\.coderabbit\.yaml$|^\.bestpractices\.json$'
+          paths: '\.md$|^docs/references\.bib$|^\.github/ISSUE_TEMPLATE/|^\.github/(CODEOWNERS|FUNDING\.yml|pull_request_template\.md)$|^LICENSE[^/]*$|^CITATION\.cff$|^\.coderabbit\.yaml$|^\.bestpractices\.json$|^\.github/org-sync\.lock$'
 
   python-quality:
     # ruff (org ruff.toml) + the tools/ scripts' self-tests under coverage,
