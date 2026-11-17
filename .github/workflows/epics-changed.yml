@@ -1,0 +1,65 @@
+# Managed by swarm-routing/.github tools/org-sync: edit templates/workflows/epics-changed.yml there.
+name: epics changed
+
+# An issue change that can move an epic list (each README's `## Epics`, the
+# org ROADMAP and the profile) asks swarm-routing/.github's epics-refresh
+# workflow to regenerate them: repository_dispatch `epics` with this
+# repository's name and nothing else (swarm-routing/.github#572). Sent for
+# an `epic` label added or removed; an epic opened or edited (renamed,
+# re-scoped); an epic or a sub-issue (an issue with a parent) closed,
+# reopened, deleted or transferred. That workflow waits five minutes for
+# the burst to end (a newer event restarts the wait), then runs org-bot's
+# `epics` task from its own main, which opens one refresh PR per repository
+# whose list drifted. A sub-issue added or removed raises no issue event: the
+# hourly run there catches it. A private repository sends nothing (it is
+# never listed). Report-only: never a gate.
+on:
+  issues:
+    types: [opened, edited, closed, reopened, deleted, transferred, labeled, unlabeled]
+
+permissions: {}
+
+jobs:
+  notify:
+    if: >-
+      !github.event.repository.private && (
+        ((github.event.action == 'labeled' || github.event.action == 'unlabeled') && github.event.label.name == 'epic') ||
+        ((github.event.action == 'opened' || github.event.action == 'edited') && contains(github.event.issue.labels.*.name, 'epic')) ||
+        ((github.event.action == 'closed' || github.event.action == 'reopened' || github.event.action == 'deleted' || github.event.action == 'transferred') &&
+          (contains(github.event.issue.labels.*.name, 'epic') || github.event.issue.parent_issue_url))
+      )
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    permissions: {}
+    steps:
+      - name: Harden the runner (audit egress)
+        uses: step-security/harden-runner@1d88384fd173af6ecb012dfd0264a306b711241a # v2.22.4
+        timeout-minutes: 2
+        with:
+          egress-policy: audit
+      - name: Bot token
+        id: bot
+        continue-on-error: true
+        timeout-minutes: 2
+        uses: swarm-routing/.github/.github/actions/bot-token@main
+        with:
+          app-id: ${{ secrets.BOT_APP_ID }}
+          private-key: ${{ secrets.BOT_APP_PRIVATE_KEY }}
+          fallback-token: ${{ secrets.ORG_BOT_TOKEN }}
+      - name: Ask epics-refresh to regenerate the lists
+        continue-on-error: true
+        timeout-minutes: 2
+        env:
+          GH_TOKEN: ${{ steps.bot.outputs.token }}
+        run: |
+          if [ -z "$GH_TOKEN" ]; then
+            echo "::warning::no bot token: swarm-routing/.github's hourly epics-refresh run picks the change up"
+            exit 0
+          fi
+          if timeout 45 gh api -X POST repos/swarm-routing/.github/dispatches \
+               -f event_type=epics \
+               -f "client_payload[repository]=${GITHUB_REPOSITORY}" > /dev/null; then
+            echo "Sent epics to swarm-routing/.github for ${GITHUB_REPOSITORY}: https://github.com/swarm-routing/.github/actions/workflows/epics-refresh.yml" >> "$GITHUB_STEP_SUMMARY"
+          else
+            echo "::warning::repository_dispatch epics failed or timed out; the hourly epics-refresh run picks the change up"
+          fi
