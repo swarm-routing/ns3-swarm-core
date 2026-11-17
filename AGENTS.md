@@ -340,9 +340,10 @@ Org-wide (1–9), then this repo's own.
   Actions allowlist change only by a PR to the repo's `[settings]` in
   `.github/org-sync.toml` or to `templates/rulesets/` in `swarm-routing/.github`,
   never in the UI or by a direct API write. A `templates/rulesets/` change
-  applies on merge; a repo's `[settings]` change applies when `repo-settings`
-  in `swarm-routing/.github` is dispatched with mode `apply` after the merge
-  (the daily run only checks). A required check runs on every PR (no `paths:`
+  applies on merge; so does a repo's `[settings]` change: the push runs its
+  org-managed `settings-apply.yml`, which asks `repo-settings` in
+  `swarm-routing/.github` to apply that one repository (#569; the daily run
+  only checks, a manual `apply` dispatch is the fallback). A required check runs on every PR (no `paths:`
   filter; skip work inside a gate job instead) and is named exactly as its
   check run. A new third-party action goes into `defaults.json`
   `selected_actions` (`templates/rulesets/`) before or with the workflow that
