@@ -426,6 +426,9 @@ Condensed from [andrej-karpathy-skills](https://github.com/forrestchang/andrej-k
 - **Script what repeats.** A check or a lookup run more than a few times
   becomes a script in `tools/` that prints a summary; the model reads the
   verdict, not the raw data (AntHocNet ADR-0014).
+- **Automate what can be automated** (org CONTRIBUTING invariant 8): a
+  step stays manual only when no API or permission exists for it, or the
+  maintainer reserves the decision; list it in swarm-routing/.github#568.
 - **Measure before cutting or adding agent text:** the `token-audit` skill
   (`swarm-routing/skills` `tools/token-audit/token_audit.py`) prints what a
   session loads and where a finished session's tokens went.
