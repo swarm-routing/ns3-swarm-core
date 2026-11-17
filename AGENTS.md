@@ -265,7 +265,7 @@ Org-wide (1–9), then this repo's own.
   [AntHocNet ADR-0013](https://github.com/swarm-routing/AntHocNet/blob/main/docs/adr/0013-track-bugs-and-findings-as-issues.md)): one type label
   (`bug`/`enhancement`/`chore`/`documentation`/`verification`, plus `epic` for
   umbrellas), area label(s) (`protocol`/`adapter`/`ns3`/`benchmark`/
-  `observability`/`packaging`/`learn-site`/`literature`), one `model:*`
+  `observability`/`packaging`/`ci`/`learn-site`/`literature`), one `model:*`
   suggestion (a model on the Claude Pro plan), one `priority:P1|P2|P3` on
   non-epic issues (none on an epic), a
   `release:vX.Y.Z` label only when a release in the repository's ladder
