@@ -272,12 +272,13 @@ Org-wide (1–9), then this repo's own.
   (`docs/roadmap.md`; until it lands, the org ROADMAP's release train)
   gates the issue: that label set is the version's scope,
   and the version is released when its issues are done (CONTRIBUTING
-  "Cutting a release"). Labels come from `labels.json` via the `sync-labels`
-  workflow, the shared `release:v0.1.0` to `release:v0.4.0` and
-  `release:v1.0.0` among them; a version outside that set is added to
-  `swarm-routing/.github`'s `labels.json` (and CONTRIBUTING's label table)
-  when a ladder needs it, and reaches a repository when its `sync-labels` runs
-  (monthly, or dispatched after the change merges),
+  "Cutting a release"). Labels come from `labels.json`, which `.github`'s
+  `labels` workflow applies to every repository, private ones included, as
+  soon as it changes (never deleting a label), the shared `release:v0.1.0`
+  to `release:v0.4.0` and `release:v1.0.0` among them; a version outside
+  that set is added to `swarm-routing/.github`'s `labels.json` (and
+  CONTRIBUTING's label table) when a ladder needs it, and reaches every
+  repository when that change merges,
   or, in a repository that keeps its own release labels (AntHocNet), created
   there with `gh label create release:vX.Y.Z` when its ladder adds the version.
 - Issue bodies: **Context** (evidence, numbers, links) · **Scope** ·
@@ -443,6 +444,17 @@ because the issue threads were thorough. Caveman the chat, not the record.
 
 ## Agent pitfalls
 
+- **Before every push, run the repository's `make check`** (where it has
+  none, the commands of its "Build & verify" section; `make pre-push
+  TITLE='…'` where the Makefile has it) **and check the PR title** is a
+  lowercase Conventional Commit, `type(scope)!: subject` with the type one
+  of `feat fix docs style refactor perf test build ci chore revert` and a
+  subject that starts lowercase. A check that goes red because a step was
+  skipped costs a whole CI round (swarm-routing/.github#586). Never add
+  commits to an unrelated PR to re-apply org-sync or fix template drift:
+  each repository is checked at the template commit its
+  `.github/org-sync.lock` pins, and org-bot's refresh PR moves the pin and
+  the text together.
 - `gh api … -F body=@file` reads the file; `-f body=@file` posts the literal
   text `@file`.
 - When the permission system refuses a command (a merge, say), stop and report
@@ -471,10 +483,11 @@ because the issue threads were thorough. Caveman the chat, not the record.
   a direct merge (`PUT pulls/<n>/merge`) is refused with HTTP 405. Only the
   required checks (`gh api 'repos/{owner}/{repo}/rules/branches/main'`, which
   `gh` fills from the checkout) gate a merge: a red or pending report-only
-  check (`codecov/patch`, Sonar) is triaged, not waited on. A red `dco` on an
-  outside contributor's commit still holds the PR until that author signs
-  off; on the maintainer's or an agent's commits it is expected
-  (swarm-routing/.github#212). `dco` is not a required check and runs on
+  check (`codecov/patch`, Sonar) is triaged, not waited on. `dco` checks
+  outside contributors' PRs only: on a member's, an agent's or the org bot's
+  PR it passes at once (swarm-routing/.github#586), and a red `dco` on an
+  outside contributor's commit holds the PR until that author signs off.
+  `dco` is not a required check and runs on
   `pull_request` only, so merge an outside contributor's PR, by auto-merge or
   directly, only after `dco` passed on the head commit that merges. Never push
   to an outside contributor's PR: ask them for the change, or make it in a
@@ -497,6 +510,12 @@ because the issue threads were thorough. Caveman the chat, not the record.
 - Never add a `Signed-off-by` trailer, for the maintainer or anyone else: a
   DCO sign-off is a person's own certification (CONTRIBUTING "Outside
   contributions").
+- Leave a stale branch (a closed PR's head, a validation branch, a
+  superseded bot branch) to org-bot's daily `branch-sweep`, which deletes it
+  once its PR has been closed for 2 days, or after 7 days without a commit
+  for a `claude/*` or `org-bot/*` branch that never had a PR
+  (swarm-routing/.github#595). Agent sessions cannot delete branches; never
+  ask the maintainer to delete one.
 - Releases are cut on request only: dispatch the release `bump` when the
   maintainer asks, once the version's `release:vX.Y.Z` issues are done and
   its exit criteria in the ladder (`docs/roadmap.md`, or the org ROADMAP's
