@@ -37,18 +37,28 @@ jobs:
         timeout-minutes: 2  # its download and start take seconds (swarm-routing/.github#164)
         with:
           egress-policy: audit
+      # a docs-only change skips the steps below; the check still reports (swarm-routing/.github#581)
+      - uses: swarm-routing/.github/.github/actions/changes@main
+        id: changes
+        timeout-minutes: 2
+        with:
+          paths: '\.md$|^docs/references\.bib$|^\.github/ISSUE_TEMPLATE/|^\.github/(CODEOWNERS|FUNDING\.yml|pull_request_template\.md)$|^LICENSE[^/]*$|^CITATION\.cff$|^\.coderabbit\.yaml$|^\.bestpractices\.json$'
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        if: steps.changes.outputs.docs-only != 'true'
         with:
           persist-credentials: false
       - name: Build and test (debug, strict warnings)
+        if: steps.changes.outputs.docs-only != 'true'
         run: |
           cmake -S core -B build/debug -DCMAKE_BUILD_TYPE=Debug
           cmake --build build/debug -j "$(nproc)"
           ctest --test-dir build/debug --output-on-failure
       - name: Build and test (ASan + UBSan)
+        if: steps.changes.outputs.docs-only != 'true'
         run: |
           cmake -S core -B build/sanitized -DCMAKE_BUILD_TYPE=Debug -DSWARM_CORE_SANITIZE=ON
           cmake --build build/sanitized -j "$(nproc)"
           ctest --test-dir build/sanitized --output-on-failure
       - name: core/ as a library in another CMake project, installed as a package, and by release tarball
+        if: steps.changes.outputs.docs-only != 'true'
         run: tools/checks/check-core-consumer.sh build/consumer

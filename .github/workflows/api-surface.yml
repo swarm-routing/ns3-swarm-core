@@ -38,13 +38,22 @@ jobs:
         timeout-minutes: 2
         with:
           egress-policy: audit
+      # a docs-only change skips the steps below; the check still reports (swarm-routing/.github#581)
+      - uses: swarm-routing/.github/.github/actions/changes@main
+        id: changes
+        timeout-minutes: 2
+        with:
+          paths: '\.md$|^docs/references\.bib$|^\.github/ISSUE_TEMPLATE/|^\.github/(CODEOWNERS|FUNDING\.yml|pull_request_template\.md)$|^LICENSE[^/]*$|^CITATION\.cff$|^\.coderabbit\.yaml$|^\.bestpractices\.json$'
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        if: steps.changes.outputs.docs-only != 'true'
         with:
           persist-credentials: false
           fetch-depth: 0  # the base commit's record
       - name: Self-test
+        if: steps.changes.outputs.docs-only != 'true'
         run: python3 -I tools/checks/check-api-surface.py --self-test
       - name: Install the pinned clang
+        if: steps.changes.outputs.docs-only != 'true'
         # generate/check need one clang version, so the record never changes
         # with the runner image (#173); the version is the script's CLANG_VERSION.
         timeout-minutes: 8
@@ -60,9 +69,11 @@ jobs:
           done
           "clang++-$v" --version
       - name: Pull the ns-3 image
+        if: steps.changes.outputs.docs-only != 'true'
         timeout-minutes: 5
         run: docker pull --quiet ghcr.io/swarm-routing/ns3-dev:latest-debug
       - name: Check the record
+        if: steps.changes.outputs.docs-only != 'true'
         env:
           TITLE: ${{ github.event.pull_request.title }}
           BODY: ${{ github.event.pull_request.body }}
