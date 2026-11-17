@@ -1,0 +1,57 @@
+# Managed by swarm-routing/.github tools/org-sync: edit templates/workflows/settings-apply.yml there.
+name: settings apply
+
+# A push to main that changes .github/org-sync.toml (its [settings] table)
+# asks swarm-routing/.github's repo-settings workflow to apply this
+# repository's settings now: repository_dispatch `repo-settings` with this
+# repository's name and nothing else (swarm-routing/.github#569). That
+# workflow checks the name against the org's repositories and runs its own
+# main's code, so nothing from here is executed with the bot token. A change
+# to org-sync.toml that leaves [settings] alone applies nothing (apply writes
+# only differences). Report-only: never a gate; if the nudge fails, the daily
+# check there reports the drift.
+on:
+  push:
+    branches: [main]
+    paths:
+      - '.github/org-sync.toml'
+
+permissions: {}
+
+jobs:
+  notify:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    permissions: {}
+    steps:
+      - name: Harden the runner (audit egress)
+        uses: step-security/harden-runner@1d88384fd173af6ecb012dfd0264a306b711241a # v2.22.4
+        timeout-minutes: 2
+        with:
+          egress-policy: audit
+      - name: Bot token
+        id: bot
+        continue-on-error: true
+        timeout-minutes: 2
+        uses: swarm-routing/.github/.github/actions/bot-token@main
+        with:
+          app-id: ${{ secrets.BOT_APP_ID }}
+          private-key: ${{ secrets.BOT_APP_PRIVATE_KEY }}
+          fallback-token: ${{ secrets.ORG_BOT_TOKEN }}
+      - name: Ask repo-settings to apply
+        continue-on-error: true
+        timeout-minutes: 2
+        env:
+          GH_TOKEN: ${{ steps.bot.outputs.token }}
+        run: |
+          if [ -z "$GH_TOKEN" ]; then
+            echo "::warning::no bot token: dispatch repo-settings (mode apply) in swarm-routing/.github, or its daily check reports the drift"
+            exit 0
+          fi
+          if timeout 45 gh api -X POST repos/swarm-routing/.github/dispatches \
+               -f event_type=repo-settings \
+               -f "client_payload[repository]=${GITHUB_REPOSITORY}" > /dev/null; then
+            echo "Sent repo-settings to swarm-routing/.github for ${GITHUB_REPOSITORY}: https://github.com/swarm-routing/.github/actions/workflows/repo-settings.yml" >> "$GITHUB_STEP_SUMMARY"
+          else
+            echo "::warning::repository_dispatch repo-settings failed or timed out; swarm-routing/.github's daily check reports the drift"
+          fi
