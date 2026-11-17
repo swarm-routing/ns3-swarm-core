@@ -166,7 +166,7 @@ follows in a minor release, with an issue in each consumer
 `ci.yml` fails when `core/` is below the `ns3-dev` image's minimum
 (`python3 -I tools/checks/check-cxx-standard.py --self-test`; in the image:
 `python3 -I tools/checks/check-cxx-standard.py --ns3 /opt/ns-3`).
-Licence headers and the include rule: `python3 -I ../.github/tools/checks/check-headers.py --dual core/ --dual tools/ --core core/ .`.
+Licence headers and the include rule: `make headers` (the Go gate CI runs, through `swarm-routing/.github` `tools/checks/check-headers.sh`: docker, or go).
 
 The public API (`docs/api-policy.md` "What the API is") is recorded in
 `docs/api-surface.txt`, generated from the headers and the `TypeId`
